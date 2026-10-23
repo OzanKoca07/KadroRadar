@@ -1,0 +1,93 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+model SourceDocument {
+ id String @id @default(cuid())
+ originalUrl String?
+ originalFilename String
+ sha256 String @unique
+ sourceOrganization String
+ state String @default("DRAFT")
+ createdAt DateTime @default(now())
+ placements HistoricalPlacement[]
+}
+model PlacementRound {
+ id String @id @default(cuid())
+ year Int
+ sequenceNo Int
+ educationLevel String
+ placements HistoricalPlacement[]
+ @@unique([year,sequenceNo,educationLevel])
+}
+model HistoricalPlacement {
+ id String @id @default(cuid())
+ roundId String
+ round PlacementRound @relation(fields:[roundId],references:[id])
+ sourceDocumentId String
+ sourceDocument SourceDocument @relation(fields:[sourceDocumentId],references:[id])
+ positionCode String
+ institutionRawName String
+ title String
+ city String
+ quota Int
+ placedCount Int
+ vacantCount Int
+ minScore Decimal? @db.Decimal(7,5)
+ maxScore Decimal? @db.Decimal(7,5)
+ sourcePage Int
+ rawRecord Json
+ approvedAt DateTime?
+ @@unique([roundId,positionCode])
+ @@index([city,title])
+}
+model ImportBatch {
+ id String @id @default(cuid())
+ sourceSha256 String
+ state String @default("STAGED")
+ rowCount Int
+ errorCount Int
+ createdAt DateTime @default(now())
+ rows ImportRow[]
+}
+model ImportRow {
+ id String @id @default(cuid())
+ batchId String
+ batch ImportBatch @relation(fields:[batchId],references:[id])
+ positionCode String?
+ raw Json
+ issues Json
+ sourcePage Int
+}
+model User {
+ id String @id @default(cuid())
+ email String @unique
+ passwordHash String
+ role String @default("USER")
+ createdAt DateTime @default(now())
+ deletedAt DateTime?
+ consentVersion String?
+ profile CandidateProfile?
+}
+model CandidateProfile {
+ id String @id @default(cuid())
+ userId String @unique
+ user User @relation(fields:[userId],references:[id])
+ educationLevel String?
+ exactDegreeProgramCode String?
+ updatedAt DateTime @updatedAt
+}
+
+model ReviewAudit {
+ id String @id @default(cuid())
+ batchId String
+ action String
+ actor String
+ count Int
+ createdAt DateTime @default(now())
+ @@index([batchId, createdAt])
+}

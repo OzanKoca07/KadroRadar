@@ -1,0 +1,59 @@
+import React, { useState } from 'react';
+import { createRoot } from 'react-dom/client';
+
+const API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api/v1';
+type Batch = { id: string; sourceSha256: string; state: string; rowCount: number; errorCount: number; createdAt: string };
+type ImportRow = { id: string; positionCode: string; sourcePage: number; raw: Record<string, unknown>; issues: unknown[] };
+const cell: React.CSSProperties = { padding: '10px 8px', borderBottom: '1px solid #e5e7eb', textAlign: 'left', fontSize: 13 };
+function App() {
+  const [token, setToken] = useState('');
+  const [batches, setBatches] = useState<Batch[]>([]);
+  const [chosen, setChosen] = useState<Batch | null>(null);
+  const [rows, setRows] = useState<ImportRow[]>([]);
+  const [page, setPage] = useState(1);
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const r = await fetch(API + path, { ...init, headers: { 'authorization': `Bearer ${token}`, 'content-type': 'application/json', ...(init.headers || {}) } });
+    if (!r.ok) { const body = await r.text(); throw new Error(`HTTP ${r.status}: ${body}`); }
+    return r.json();
+  }
+  async function loadBatches() {
+    setBusy(true); try { setBatches(await request<Batch[]>('/admin/imports')); setMessage('Partiler yüklendi.'); }
+    catch(e) { setMessage(String(e)); } finally { setBusy(false); }
+  }
+  async function openBatch(b: Batch, p = 1) {
+    setBusy(true); try { const d = await request<{items: ImportRow[]}>('/admin/imports/' + encodeURIComponent(b.id) + '?page=' + p); setChosen(b); setRows(d.items); setPage(p); setMessage(''); }
+    catch(e) { setMessage(String(e)); } finally { setBusy(false); }
+  }
+  async function approve() {
+    if (!chosen || !window.confirm('Bu partinin kaynak PDF ile karşılaştırmasını gerçekten tamamladınız mı? Bu işlem kayıtları kamuya açar.')) return;
+    const confirmation = window.prompt('Onaylamak için tam olarak şunu yazın: 504 KAYDI KONTROL ETTİM');
+    if (!confirmation) return;
+    setBusy(true); try {
+      const outcome = await request<{approvedCount:number}>('/admin/imports/' + chosen.id + '/approve', { method: 'POST', body: JSON.stringify({confirmation}) });
+      setMessage(`${outcome.approvedCount} kayıt onaylandı.`); setChosen(null); setRows([]); await loadBatches();
+    } catch(e) { setMessage(String(e)); } finally { setBusy(false); }
+  }
+  return <main style={{fontFamily:'system-ui,sans-serif',background:'#f5f7fb',minHeight:'100vh',color:'#122247',padding:'30px max(20px,5vw)'}}>
+    <header style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><h1>KadroRadar · Veri İnceleme</h1><small>Yerel geliştirme aracı · Üretim için RBAC gerekli</small></header>
+    <section style={{background:'white',padding:22,borderRadius:12,marginBottom:20}}>
+      <label>Yerel inceleme anahtarı <input type="password" value={token} onChange={e=>setToken(e.target.value)} placeholder="ADMIN_REVIEW_TOKEN" style={{marginLeft:12,padding:10,minWidth:270}} /></label>
+      <button disabled={!token || busy} onClick={loadBatches} style={{marginLeft:12,padding:10}}>Partileri getir</button>
+      <p role="status">{message}</p>
+    </section>
+    <section style={{background:'white',padding:22,borderRadius:12,marginBottom:20}}>
+      <h2>İçe aktarma partileri</h2><div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse'}}><thead><tr>{['Oluşturma','Durum','Satır','Hata','Kaynak SHA','İşlem'].map(x=><th key={x} style={cell}>{x}</th>)}</tr></thead><tbody>
+      {batches.map(b=><tr key={b.id}><td style={cell}>{new Date(b.createdAt).toLocaleString('tr-TR')}</td><td style={cell}>{b.state}</td><td style={cell}>{b.rowCount}</td><td style={cell}>{b.errorCount}</td><td style={cell}>{b.sourceSha256.slice(0,16)}...</td><td style={cell}><button onClick={()=>openBatch(b)}>İncele</button></td></tr>)}
+      </tbody></table></div>
+    </section>
+    {chosen && <section style={{background:'white',padding:22,borderRadius:12}}>
+      <h2>Parti inceleme · {chosen.state}</h2><p>Kaynak SHA-256: <code>{chosen.sourceSha256}</code></p>
+      <p>Satırları kaynak PDF sayfasıyla karşılaştır. Otomatik bütünlük kontrolü, insan incelemesinin yerini tutmaz.</p>
+      <div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse'}}><thead><tr>{['PDF s.','Kadro kodu','Kurum','Unvan','Kontenjan','En küçük','En büyük','Hata'].map(x=><th key={x} style={cell}>{x}</th>)}</tr></thead><tbody>{rows.map(r=><tr key={r.id}><td style={cell}>{r.sourcePage}</td><td style={cell}>{r.positionCode}</td><td style={cell}>{String(r.raw.institutionRawName??'')}</td><td style={cell}>{String(r.raw.title??'')}</td><td style={cell}>{String(r.raw.quota??'')}</td><td style={cell}>{String(r.raw.minScore??'-')}</td><td style={cell}>{String(r.raw.maxScore??'-')}</td><td style={cell}>{r.issues.length}</td></tr>)}</tbody></table></div>
+      <nav style={{display:'flex',gap:10,marginTop:15,alignItems:'center'}}><button disabled={page<=1 || busy} onClick={()=>openBatch(chosen,page-1)}>Önceki</button><span>Sayfa {page}</span><button disabled={rows.length<30 || busy} onClick={()=>openBatch(chosen,page+1)}>Sonraki</button></nav>
+      {chosen.state==='STAGED' && <button disabled={busy} onClick={approve} style={{marginTop:20,background:'#142655',color:'white',padding:12,border:0,borderRadius:8}}>İnceleme tamamlandı — toplu onay</button>}
+    </section>}
+  </main>;
+}
+createRoot(document.getElementById('root')!).render(<App/>);

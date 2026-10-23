@@ -1,0 +1,17 @@
+{
+    "name": "kadroradar",
+    "private": true,
+    "packageManager": "pnpm@9.15.4",
+    "pnpm": {
+        "overrides": {
+            "query-string": "7.1.3"
+        }
+    },
+    "scripts": {
+        "data:import:historical": "python services/ingest/import_historical.py",
+        "test:ingest": "python -m unittest discover -s services/ingest/tests -v",
+        "dev:api": "pnpm --filter @kadro/api dev",
+        "dev:mobile": "pnpm --filter @kadro/mobile start",
+        "dev:admin": "pnpm --filter @kadro/admin dev"
+    }
+}

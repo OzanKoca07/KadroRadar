@@ -1,0 +1,10 @@
+CREATE TABLE "SourceDocument" ("id" TEXT PRIMARY KEY,"originalUrl" TEXT,"originalFilename" TEXT NOT NULL,"sha256" TEXT NOT NULL UNIQUE,"sourceOrganization" TEXT NOT NULL,"state" TEXT NOT NULL DEFAULT 'DRAFT',"createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE "PlacementRound" ("id" TEXT PRIMARY KEY,"year" INTEGER NOT NULL,"sequenceNo" INTEGER NOT NULL,"educationLevel" TEXT NOT NULL);
+CREATE UNIQUE INDEX "round_unique" ON "PlacementRound" ("year","sequenceNo","educationLevel");
+CREATE TABLE "HistoricalPlacement" ("id" TEXT PRIMARY KEY,"roundId" TEXT NOT NULL REFERENCES "PlacementRound"("id"),"sourceDocumentId" TEXT NOT NULL REFERENCES "SourceDocument"("id"),"positionCode" TEXT NOT NULL,"institutionRawName" TEXT NOT NULL,"title" TEXT NOT NULL,"city" TEXT NOT NULL,"quota" INTEGER NOT NULL,"placedCount" INTEGER NOT NULL,"vacantCount" INTEGER NOT NULL,"minScore" DECIMAL(7,5),"maxScore" DECIMAL(7,5),"sourcePage" INTEGER NOT NULL,"rawRecord" JSONB NOT NULL,"approvedAt" TIMESTAMP(3));
+CREATE UNIQUE INDEX "placement_unique" ON "HistoricalPlacement" ("roundId","positionCode");
+CREATE INDEX "placement_city_title" ON "HistoricalPlacement" ("city","title");
+CREATE TABLE "ImportBatch" ("id" TEXT PRIMARY KEY,"sourceSha256" TEXT NOT NULL,"state" TEXT NOT NULL DEFAULT 'STAGED',"rowCount" INTEGER NOT NULL,"errorCount" INTEGER NOT NULL,"createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE "ImportRow" ("id" TEXT PRIMARY KEY,"batchId" TEXT NOT NULL REFERENCES "ImportBatch"("id"),"positionCode" TEXT,"raw" JSONB NOT NULL,"issues" JSONB NOT NULL,"sourcePage" INTEGER NOT NULL);
+CREATE TABLE "User" ("id" TEXT PRIMARY KEY,"email" TEXT NOT NULL UNIQUE,"passwordHash" TEXT NOT NULL,"role" TEXT NOT NULL DEFAULT 'USER',"createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,"deletedAt" TIMESTAMP(3),"consentVersion" TEXT);
+CREATE TABLE "CandidateProfile" ("id" TEXT PRIMARY KEY,"userId" TEXT NOT NULL UNIQUE REFERENCES "User"("id"),"educationLevel" TEXT,"exactDegreeProgramCode" TEXT,"updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);

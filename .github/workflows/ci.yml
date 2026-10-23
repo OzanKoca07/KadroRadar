@@ -1,0 +1,27 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  parser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r services/ingest/requirements.txt
+      - run: python -m unittest discover -s services/ingest/tests -v
+  typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm --filter @kadro/api prisma:generate
+      - run: pnpm --filter @kadro/api build
+      - run: pnpm --filter @kadro/admin build
