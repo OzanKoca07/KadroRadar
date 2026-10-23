@@ -1,1 +1,24 @@
-{"expo":{"name":"KadroRadar","slug":"kadroradar","scheme":"kadroradar","plugins":["expo-router"],"android":{"package":"com.kadroradar.app"}}}
+{
+  "expo": {
+    "name": "KadroRadar",
+    "slug": "kadroradar",
+    "scheme": "kadroradar",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "plugins": [
+      "expo-router"
+    ],
+    "android": {
+      "package": "com.kadroradar.app",
+      "versionCode": 1
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "44bbc3b8-3306-4b9a-91c6-74a2eb2e0877"
+      }
+    },
+    "owner": "ozankoca"
+  }
+}
