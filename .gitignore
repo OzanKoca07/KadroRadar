@@ -62,3 +62,7 @@ Thumbs.db
 # Temporary files
 tmp/
 temp/
+
+
+
+package-lock.json
