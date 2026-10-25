@@ -1,0 +1,65 @@
+const assert=require('node:assert/strict');
+const path=require('node:path');
+const {spawn,execFileSync}=require('node:child_process');
+const {randomBytes}=require('node:crypto');
+if(!process.env.DATABASE_URL?.includes('/kadroradar_ingestion_test_'))throw Error('Isolated DB required');
+process.env.NODE_ENV='test';process.env.NOTIFICATIONS_ENABLED='false';process.env.SOURCE_SYNC_ENABLED='false';
+require('reflect-metadata');
+const {PrismaClient}=require('@prisma/client');
+const {NestFactory}=require('@nestjs/core');
+const {AppModule}=require('./dist/module');
+const {passwordHash}=require('./dist/password');
+const {chromium}=require('@playwright/test');
+(async()=>{
+ const db=new PrismaClient(),suffix=randomBytes(6).toString('hex'),password=randomBytes(20).toString('hex'),email=`browser-${suffix}@example.test`;
+ const user=await db.user.create({data:{email,passwordHash:await passwordHash(password),role:'SYSTEM_ADMIN'}});
+ const app=await NestFactory.create(AppModule,{logger:false});app.enableCors({origin:'http://127.0.0.1:5179',credentials:true});app.setGlobalPrefix('api/v1');await app.listen(0,'127.0.0.1');
+ const root=path.resolve(__dirname,'../..'),api=await app.getUrl()+'/api/v1';process.env.CORS_ORIGINS='http://127.0.0.1:5179';
+ const vite=spawn(process.execPath,[path.resolve(root,'node_modules/vite/bin/vite.js'),'--host','127.0.0.1','--port','5179','--strictPort'],{cwd:path.resolve(root,'apps/admin'),env:{...process.env,VITE_API_BASE_URL:api},stdio:'ignore',windowsHide:true});
+ let browser,page;let checks=0;
+ try{
+  for(let i=0;i<100;i++){try{if((await fetch('http://127.0.0.1:5179')).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+  browser=await chromium.launch({...(process.platform==='win32'?{channel:'msedge'}:{}),headless:true});const context=await browser.newContext();page=await context.newPage();page.on('console',message=>{if(message.type()==='warning'||message.type()==='error')console.error('Browser:',message.text());});
+  await page.goto('http://127.0.0.1:5179');
+  const login=async()=>{await page.getByLabel('E-posta',{exact:true}).fill(email);await page.getByLabel('Parola',{exact:true}).fill(password);await page.getByRole('button',{name:'Hesapla giriş yap'}).click();await page.getByRole('button',{name:'Kuyruğu getir'}).waitFor({state:'visible'});await require('@playwright/test').expect(page.getByRole('button',{name:'Kuyruğu getir'})).toBeEnabled();};
+  await login();checks++;
+  const cookies=await context.cookies(api);assert.ok(cookies.some(c=>c.name==='kr_session'&&c.httpOnly));checks++;
+  const csrfResponse=await page.evaluate(async api=>(await fetch(api+'/account/profile',{method:'PUT',credentials:'include',headers:{'content-type':'application/json'},body:'{}'})).status,api);assert.equal(csrfResponse,403);checks++;
+  await page.getByText('Manuel / JSON ilan aktarımı',{exact:true}).click();
+  const title='Browser synthetic '+suffix;
+  await page.getByLabel('CSV veya JSON dosyası').setInputFiles({name:'synthetic.csv',mimeType:'text/csv',buffer:Buffer.from(`title;organization;sourceUrl\n${title};Synthetic fixture;https://enerji.gov.tr/browser-fixture-${suffix}\n${title} rejected;Fixture;https://enerji.gov.tr/browser-reject-${suffix}`)});
+  await require('@playwright/test').expect(page.getByLabel('İçe aktarılacak ilanlar JSON')).toHaveValue(new RegExp(suffix));checks++;
+  await page.getByRole('button',{name:'İnceleme kuyruğuna aktar',exact:true}).click();
+  await page.getByRole('button',{name:title+' · PENDING_REVIEW',exact:true}).click();checks++;
+  await page.getByText('Eksik alanlar:',{exact:false}).waitFor();checks++;
+  const fields=JSON.parse(await page.getByLabel('İlan alanları JSON').inputValue());fields.quota=1;await page.getByLabel('İlan alanları JSON').fill(JSON.stringify(fields));await page.getByRole('button',{name:'Taslağı kaydet ve yeniden incelemeye gönder',exact:true}).click();await page.getByRole('button',{name:title+' · PENDING_REVIEW',exact:true}).click();checks++;
+  await page.getByLabel('Kaynak kontrolü kanıtı ve notu').fill('Synthetic browser source review only');
+  await page.getByRole('button',{name:'APPROVE',exact:true}).click();
+  await page.getByRole('button',{name:title+' · APPROVED',exact:true}).click();
+  await page.getByRole('button',{name:'PUBLISH',exact:true}).click();
+  await page.getByRole('button',{name:title+' · PUBLISHED',exact:true}).click();
+  await page.getByRole('heading',{name:'Denetim geçmişi'}).waitFor();checks+=3;
+  await page.getByRole('button',{name:'ARCHIVE',exact:true}).click();await page.getByRole('button',{name:title+' · ARCHIVED',exact:true}).waitFor();checks++;
+  await page.getByRole('button',{name:title+' rejected · PENDING_REVIEW',exact:true}).click();await page.getByRole('button',{name:'REJECT',exact:true}).click();await page.getByRole('button',{name:title+' rejected · REJECTED',exact:true}).waitFor();checks++;
+  await page.getByText('Resmî Gazete PDF içe aktarma',{exact:true}).click();
+  const pdf=path.join(root,'tmp/pdfs/browser-'+suffix+'.pdf');execFileSync('python',[path.join(root,'services/ingest/fixtures/make_gazette_fixture.py'),pdf]);
+  await page.getByLabel('Resmî Gazete PDF',{exact:true}).setInputFiles(pdf);
+  await page.getByRole('button',{name:"PDF ayrıştır ve staging'e aktar",exact:true}).click();
+  await page.getByText(/1 yeni, 0 değişen, 0 yinelenen/).waitFor();await page.getByTitle('Seçilen orijinal PDF',{exact:true}).waitFor();checks+=2;
+  const pdfRow=await db.announcementImportRow.findFirst({where:{sourceDocumentId:{not:null},raw:{path:['sourceEvidence','pdfSha256'],equals:require('node:crypto').createHash('sha256').update(require('node:fs').readFileSync(pdf)).digest('hex')}},orderBy:{createdAt:'desc'}});
+  assert.ok(pdfRow);await page.getByRole('button',{name:pdfRow.parsed.title+' · PENDING_REVIEW',exact:true}).first().click();
+  await page.getByRole('button',{name:'Orijinal PDF sayfalarını incele',exact:true}).click();await page.getByTitle('Saklanan kaynak PDF',{exact:true}).waitFor();checks++;
+  await page.getByText('ÖSYM lisans / önlisans / ortaöğretim aktarımı',{exact:true}).press('Enter');
+  const historicalPdf=path.join(root,'tmp/pdfs','historical-browser-'+suffix+'.pdf');execFileSync('python',[path.join(root,'services/ingest/fixtures/make_historical_fixture.py'),historicalPdf,'BACHELOR',String(parseInt(suffix,16)%100000000)]);
+  await require('@playwright/test').expect(page.getByLabel('ÖSYM sonuç PDF',{exact:true})).toBeVisible();await page.getByLabel('ÖSYM sonuç PDF',{exact:true}).setInputFiles(historicalPdf);await page.getByRole('button',{name:"ÖSYM PDF staging'e aktar",exact:true}).click();await page.getByText(/1 satır · BACHELOR/).waitFor();checks++;
+  const historicalSha=require('node:crypto').createHash('sha256').update(require('node:fs').readFileSync(historicalPdf)).digest('hex');const batch=await db.importBatch.findFirst({where:{sourceSha256:historicalSha}});assert.ok(batch);
+  await page.getByRole('button',{name:'ÖSYM partilerini getir',exact:true}).click();await page.getByRole('row').filter({hasText:historicalSha.slice(0,16)}).getByRole('button',{name:'İncele',exact:true}).click();await page.getByRole('button',{name:'ÖSYM kaynak PDF önizle',exact:true}).click();await page.getByTitle('ÖSYM kaynak PDF',{exact:true}).waitFor();checks++;
+  await require('@playwright/test').expect(page.getByRole('button',{name:'İnceleme tamamlandı — toplu onay',exact:true})).toBeDisabled();await page.getByLabel('ÖSYM onay teyidi',{exact:true}).fill('1 KAYDI KONTROL ETTİM');const approvalResponse=page.waitForResponse(response=>response.url().endsWith('/admin/imports/'+batch.id+'/approve')&&response.request().method()==='POST');await page.getByRole('button',{name:'İnceleme tamamlandı — toplu onay',exact:true}).click();const approvedResponse=await approvalResponse;assert.equal(approvedResponse.status(),201,await approvedResponse.text());await require('@playwright/test').expect.poll(async()=>(await db.importBatch.findUnique({where:{id:batch.id}})).state).toBe('APPROVED');checks++;
+
+  await db.candidateSession.updateMany({where:{userId:user.id},data:{expiresAt:new Date(0)}});
+  await page.getByRole('button',{name:'Kuyruğu getir',exact:true}).click();await page.getByText(/Oturum süresi doldu/).waitFor();checks++;
+  await login();await page.getByRole('button',{name:'Çıkış yap',exact:true}).click();await require('@playwright/test').expect(page.getByRole('button',{name:'Kuyruğu getir'})).toBeDisabled();checks++;
+  await db.user.update({where:{id:user.id},data:{role:'USER'}});await page.getByLabel('E-posta',{exact:true}).fill(email);await page.getByLabel('Parola',{exact:true}).fill(password);await page.getByRole('button',{name:'Hesapla giriş yap'}).click();await page.getByText(/yönetim yetkisi yok/).waitFor();checks++;
+  console.log(JSON.stringify({status:'PASS',browser:'installed Edge via Playwright',checks,syntheticOnly:true,deviceChecks:0}));
+ }catch(error){if(page){require('node:fs').writeFileSync(path.join(root,'tmp','admin-browser-failure.txt'),await page.locator('body').innerText());await page.screenshot({path:path.join(root,'tmp','admin-browser-failure.png'),fullPage:true});}throw error;}finally{if(browser)await browser.close();vite.kill();await app.close();await db.candidateSession.deleteMany({where:{userId:user.id}});await db.user.delete({where:{id:user.id}});await db.$disconnect();}
+})().catch(error=>{console.error(error);process.exitCode=1;});

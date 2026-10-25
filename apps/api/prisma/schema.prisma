@@ -15,6 +15,7 @@ model SourceDocument {
  state String @default("DRAFT")
  createdAt DateTime @default(now())
  placements HistoricalPlacement[]
+ gazetteImports AnnouncementImportRow[]
 }
 model PlacementRound {
  id String @id @default(cuid())
@@ -72,6 +73,8 @@ model User {
  deletedAt DateTime?
  consentVersion String?
  profile CandidateProfile?
+ sessions CandidateSession[]
+ saved SavedAnnouncement[]
 }
 model CandidateProfile {
  id String @id @default(cuid())
@@ -79,6 +82,14 @@ model CandidateProfile {
  user User @relation(fields:[userId],references:[id])
  educationLevel String?
  exactDegreeProgramCode String?
+ kpssScore Float?
+ kpssScoreType String?
+ examYear Int?
+ preferredCities String[] @default([])
+ ydsScore Float?
+ certificates String[] @default([])
+ notificationConsent Boolean @default(false)
+ pushToken String?
  updatedAt DateTime @updatedAt
 }
 
@@ -90,4 +101,143 @@ model ReviewAudit {
  count Int
  createdAt DateTime @default(now())
  @@index([batchId, createdAt])
+}
+// Add to the END of apps/api/prisma/schema.prisma.
+// HistoricalPlacement remains separate: an announcement is NOT a placement result.
+model Announcement {
+  id                 String    @id @default(cuid())
+  title              String
+  organization       String
+  city               String?
+  district           String?
+  positionTitle      String?
+  quota              Int?
+  educationLevel     String?
+  summary            String?
+  requirements       String?
+  sourceUrl          String?
+  sourceEvidence     Json?
+  applicationUrl     String?
+  applicationStartAt DateTime?
+  applicationEndAt   DateTime?
+  announcedAt        DateTime?
+  sourceCheckedAt    DateTime?
+  status             String    @default("DRAFT") // DRAFT, PUBLISHED, ARCHIVED, WITHDRAWN
+  publishedAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  positions AnnouncementPosition[]
+  savedBy SavedAnnouncement[]
+  sourceReferences AnnouncementSourceReference[]
+
+  @@index([status, applicationEndAt])
+  @@index([organization, city])
+  @@index([announcedAt])
+}
+
+model CandidateSession {
+ id String @id
+ userId String
+ user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+ expiresAt DateTime
+ csrfHash String
+ createdAt DateTime @default(now())
+ @@index([userId])
+ @@index([expiresAt])
+}
+
+model AuthRateLimit {
+ id String @id
+ count Int
+ until DateTime
+}
+
+model CandidateNotification {
+ id String @id @default(cuid())
+ userId String
+ announcementId String
+ eventKey String
+ kind String
+ title String
+ status String @default("PENDING")
+ ticketId String?
+ deviceTokenHash String?
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ @@unique([userId,eventKey])
+ @@index([status,createdAt])
+}
+
+model SavedAnnouncement {
+ userId String
+ announcementId String
+ user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+ announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+ createdAt DateTime @default(now())
+ lastKnownEndAt DateTime?
+ @@id([userId, announcementId])
+}
+
+model AnnouncementPosition {
+ id String @id @default(cuid())
+ announcementId String
+ announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+ title String
+ city String?
+ quota Int?
+ requirements Json
+ sourceUrl String?
+ sourceEvidence Json?
+ verifiedAt DateTime?
+ updatedAt DateTime @updatedAt
+}
+
+model AnnouncementImportRow {
+ id String @id @default(cuid())
+ sourceUrl String @unique
+ contentHash String
+ raw Json
+ parsed Json
+ issues Json
+ status String @default("PENDING_REVIEW")
+ version Int @default(1)
+ announcementId String? @unique
+ sourceDocumentId String?
+ sourceDocument SourceDocument? @relation(fields:[sourceDocumentId], references:[id])
+ sourceReference AnnouncementSourceReference?
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ audits AnnouncementReviewAudit[]
+}
+
+model AnnouncementReviewAudit {
+ id String @id @default(cuid())
+ rowId String
+ row AnnouncementImportRow @relation(fields: [rowId], references: [id])
+ actor String
+ action String
+ snapshot Json
+ createdAt DateTime @default(now())
+}
+
+model SourceSyncState {
+ id String @id
+ lastAttemptAt DateTime?
+ lastSuccessAt DateTime?
+ nextAttemptAt DateTime?
+ consecutiveFailures Int @default(0)
+ status String @default("NEVER_RUN")
+ metrics Json?
+ errorCode String?
+ updatedAt DateTime @updatedAt
+}
+
+model AnnouncementSourceReference {
+ id String @id @default(cuid())
+ announcementId String
+ announcement Announcement @relation(fields:[announcementId],references:[id],onDelete:Cascade)
+ importRowId String @unique
+ importRow AnnouncementImportRow @relation(fields:[importRowId],references:[id])
+ evidence Json
+ createdAt DateTime @default(now())
 }

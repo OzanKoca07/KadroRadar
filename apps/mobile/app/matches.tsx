@@ -1,0 +1,10 @@
+import {useCallback,useState} from 'react';
+import {useFocusEffect,Link} from 'expo-router';
+import {Text,FlatList,View,Pressable} from 'react-native';
+import {SafeAreaView} from 'react-native-safe-area-context';
+import {accountRequest} from '../lib/account';
+const labels:Record<string,string>={ELIGIBLE:'UYGUN',INELIGIBLE:'UYGUN DEĞİL',UNKNOWN:'BELİRSİZ / DOĞRULAMA GEREKLİ'};
+export default function Matches(){const [data,setData]=useState<any>({items:[],pages:0}),[page,setPage]=useState(1),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+ const load=useCallback(async()=>{setBusy(true);setError('');try{setData(await accountRequest('/account/matches?page='+page));}catch(e){setError(String(e));}finally{setBusy(false);}},[page]);useFocusEffect(useCallback(()=>{void load();},[load]));
+ return <SafeAreaView edges={['bottom']} style={{flex:1,padding:20}}><Text style={{fontSize:26,fontWeight:'800'}}>Bana Uygun</Text><Text>Her kadro ayrı değerlendirilir. Belirsiz sonuç başvuru hakkını belirlemez.</Text>{error?<Pressable onPress={load}><Text>{error} Tekrar dene</Text></Pressable>:<FlatList data={data.items} keyExtractor={item=>item.id} refreshing={busy} onRefresh={load} ListEmptyComponent={<Text>{busy?'Yükleniyor…':'Güncel yayımlanmış ilan bulunmuyor.'}</Text>} renderItem={({item})=><View style={{backgroundColor:'#F3F6FB',borderRadius:14,padding:18,marginTop:12}}><Link href={{pathname:'/announcement/[id]',params:{id:item.id}}}>{item.title}</Link>{item.positions.length===0?<Text>Kadro bilgisi doğrulanmamış.</Text>:item.positions.map((p:any)=><View key={p.id}><Text>{p.title}: {labels[p.outcome]}</Text>{p.reasons.map((r:any,i:number)=><Text key={i}>• {r.reason}</Text>)}</View>)}</View>}/>}<View style={{flexDirection:'row',justifyContent:'space-between'}}>{page>1&&<Pressable onPress={()=>setPage(page-1)}><Text>Önceki</Text></Pressable>}<Text>Sayfa {page}</Text>{page<data.pages&&<Pressable onPress={()=>setPage(page+1)}><Text>Sonraki</Text></Pressable>}</View></SafeAreaView>;
+}

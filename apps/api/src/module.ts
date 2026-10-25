@@ -1,5 +1,10 @@
-import { Module, Controller, Get, Param, Query, Injectable, OnModuleDestroy, NotFoundException, UnauthorizedException, BadRequestException, Headers, Post, Body } from '@nestjs/common';
+import { Module, Controller, Get, Param, Query, Injectable, OnModuleDestroy, NotFoundException, UnauthorizedException, BadRequestException, Headers, Post, Body, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaClient, Prisma } from '@prisma/client';
+import { AnnouncementsModule } from './announcements.controller';
+import { CandidateModule, CandidateAuth } from './candidate';
+import {GazetteModule} from './gazette';
+import {HistoricalImportModule} from './historical-import';
+import { Req } from '@nestjs/common';
 
 @Injectable()
 class Db extends PrismaClient implements OnModuleDestroy {
@@ -35,7 +40,7 @@ class ApiController {
   constructor(private readonly db: Db) {}
 
   @Get('health')
-  health() { return { status: 'ok' }; }
+  async health() {try{await this.db.$queryRaw`SELECT 1`;return {status:'ok',database:'ready'};}catch{throw new ServiceUnavailableException('Database unavailable');} }
 
   @Get('historical/rounds')
   rounds() {
@@ -109,14 +114,13 @@ class ApiController {
     return { ...record, qualificationNote: 'Nitelik kodları doğrulanmadan uygunluk kararı üretilemez.' };
   }
 
-  @Get('announcements')
-  announcements() { return { items: [], sourceStatus: 'Resmî ilan kaynağı henüz bağlanmadı; güncel ilanlar doğrulanamıyor.' }; }
 }
 
 
 // This review token is a LOCAL DEVELOPMENT credential, not production user authentication.
 // Do not expose these endpoints publicly before replacing with authenticated RBAC.
 function requireLocalReviewer(auth?: string): void {
+  if (process.env.NODE_ENV === 'production') throw new UnauthorizedException('Account session required');
   const configured = process.env.ADMIN_REVIEW_TOKEN;
   if (!configured || configured.length < 32 || !auth?.startsWith('Bearer '))
     throw new UnauthorizedException('Local reviewer token required (minimum 32 characters)');
@@ -129,11 +133,15 @@ function requireLocalReviewer(auth?: string): void {
 
 @Controller('admin/imports')
 class ReviewController {
-  constructor(private readonly db: Db) {}
+  constructor(private readonly db: Db, private readonly candidateAuth: CandidateAuth) {}
+  private async reviewer(req:any, auth?:string) {
+    if(process.env.NODE_ENV !== 'production' && auth && !/Bearer [a-f0-9]{64}$/.test(auth)) {requireLocalReviewer(auth);return 'LOCAL_REVIEW_TOKEN';}
+    return (await this.candidateAuth.role(req,['SYSTEM_ADMIN','REVIEWER'],req.method!=='GET')).id;
+  }
 
   @Get()
-  batches(@Headers('authorization') authorization?: string) {
-    requireLocalReviewer(authorization);
+  async batches(@Req() req:any, @Headers('authorization') authorization?: string) {
+    await this.reviewer(req,authorization);
     return this.db.importBatch.findMany({
       orderBy: { createdAt: 'desc' }, take: 100,
       select: { id: true, sourceSha256: true, state: true, rowCount: true, errorCount: true, createdAt: true,
@@ -143,8 +151,8 @@ class ReviewController {
 
   @Get(':id')
   async detail(@Param('id') id: string, @Headers('authorization') authorization?: string,
-    @Query('page') page?: string) {
-    requireLocalReviewer(authorization);
+    @Query('page') page?: string, @Req() req?:any) {
+    await this.reviewer(req,authorization);
     const batch = await this.db.importBatch.findUnique({ where: { id } });
     if (!batch) throw new NotFoundException('İçe aktarma partisi bulunamadı');
     const p = integerInRange(page, 1, 1, 100000);
@@ -155,13 +163,12 @@ class ReviewController {
 
   @Post(':id/approve')
   async approve(@Param('id') id: string, @Headers('authorization') authorization?: string,
-    @Body() body?: { confirmation?: string }) {
-    requireLocalReviewer(authorization);
-    if (body?.confirmation !== '504 KAYDI KONTROL ETTİM')
-      throw new BadRequestException('Toplu onay için açık yönetici teyidi gerekiyor');
+    @Body() body?: { confirmation?: string }, @Req() req?:any) {
+    const actor = await this.reviewer(req,authorization);
     return this.db.$transaction(async (tx) => {
       const batch = await tx.importBatch.findUnique({ where: { id } });
       if (!batch) throw new NotFoundException('İçe aktarma partisi bulunamadı');
+      if(body?.confirmation!==`${batch.rowCount} KAYDI KONTROL ETTİM`)throw new BadRequestException('Partinin gerçek satır sayısıyla açık teyit gerekiyor');
       if (batch.state !== 'STAGED' || batch.errorCount !== 0 || batch.rowCount <= 0)
         throw new BadRequestException('Parti onaya uygun değil');
       const source = await tx.sourceDocument.findUnique({ where: { sha256: batch.sourceSha256 } });
@@ -200,11 +207,11 @@ class ReviewController {
       if (updated.count !== rows.length) throw new BadRequestException('Bazı kayıtlar önceden onaylanmış');
       await tx.importBatch.update({ where: { id }, data: { state: 'APPROVED' } });
       await tx.sourceDocument.update({ where: { id: source.id }, data: { state: 'APPROVED' } });
-      await tx.reviewAudit.create({ data: { batchId: id, action: 'APPROVE', actor: 'LOCAL_REVIEW_TOKEN', count: updated.count } });
+      await tx.reviewAudit.create({ data: { batchId: id, action: 'APPROVE', actor, count: updated.count } });
       return { state: 'APPROVED', approvedCount: updated.count };
     }, { timeout: 15000 });
   }
 }
 
-@Module({ controllers: [ApiController, ReviewController], providers: [Db] })
+@Module({ imports: [AnnouncementsModule, CandidateModule, GazetteModule,HistoricalImportModule], controllers: [ApiController, ReviewController], providers: [Db] })
 export class AppModule {}

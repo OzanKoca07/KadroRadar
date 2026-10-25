@@ -1,0 +1,14 @@
+const {evaluate} = require('./dist/eligibility');
+const assert = require('node:assert/strict');
+const profile = {educationLevel:'LISANS',exactDegreeProgramCode:'1234',kpssScore:80,kpssScoreType:'P3',examYear:2024,certificates:[]};
+const criteria = {complete:true,educationLevels:['LISANS'],degreeCodes:['1234'],degreeCodesVerified:true,kpssRequired:true,kpssScoreType:'P3',kpssMinimumScore:70,examYears:[2024]};
+assert.equal(evaluate(profile,criteria,true).outcome,'ELIGIBLE');
+assert.equal(evaluate({...profile,kpssScore:60},criteria,true).outcome,'INELIGIBLE');
+assert.equal(evaluate({},criteria,true).outcome,'UNKNOWN');
+assert.equal(evaluate(profile,{...criteria,degreeCodesVerified:false},true).outcome,'UNKNOWN');
+assert.equal(evaluate(profile,criteria,false).outcome,'UNKNOWN');
+assert.equal(evaluate(profile,{...criteria,complete:false},true).outcome,'UNKNOWN');
+assert.equal(evaluate(profile,{...criteria,certificates:['certificate']},true).outcome,'UNKNOWN');
+assert.equal(evaluate(profile,{...criteria,otherConditions:['human review']},true).outcome,'UNKNOWN');
+assert.equal(evaluate(profile,{complete:true},true).outcome,'UNKNOWN');
+console.log('PASS: 9 conservative eligibility checks');

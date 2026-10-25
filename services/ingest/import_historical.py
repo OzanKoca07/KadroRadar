@@ -4,12 +4,26 @@ from pathlib import Path
 from decimal import Decimal
 import fitz
 
-def parse_pdf(path):
+def document_metadata(path):
+    with fitz.open(str(path)) as doc:
+        if doc.needs_pass or not 1<=len(doc)<=600:raise ValueError('PDF resource limit')
+        text=doc[0].get_text().replace('\u00a0',' ').replace('\u00ad','-')
+        normalized=text.replace('İ','i').replace('ı','i').lower()
+        period=re.search(r'kpss\s*[-–]\s*(20\d{2})\s*/\s*(\d+)',normalized)
+        education='ASSOCIATE' if re.search(r'ön\s*lisans',normalized) else 'HIGH_SCHOOL' if 'ortaöğretim' in normalized else 'BACHELOR' if 'lisans' in normalized else None
+        if not period or not education:raise ValueError('Official KPSS period/education header required')
+        return {'year':int(period[1]),'round':int(period[2]),'education':education,'pageCount':len(doc)}
+
+def parse_pdf(path,education=None):
+    if Path(path).stat().st_size>64*1024*1024:raise ValueError('PDF resource limit')
+    actual=document_metadata(path)
+    if education is not None and actual['education']!=education:raise ValueError('Education/source mismatch')
     doc=fitz.open(str(path))
+    prefix={'BACHELOR':'3','ASSOCIATE':'2','HIGH_SCHOOL':'1'}[actual['education']]
     rows=[]; errors=[]
     for page_no,page in enumerate(doc,1):
-        lines=[x.strip() for x in page.get_text().splitlines() if x.strip()]
-        starts=[i for i,x in enumerate(lines) if re.fullmatch(r'30\d{7}',x)]
+        lines=[x.strip().replace('\u00a0',' ').replace('\u00ad','-') for x in page.get_text().splitlines() if x.strip()]
+        starts=[i for i,x in enumerate(lines) if re.fullmatch(prefix+r'\d{8}',x)]
         for j,start in enumerate(starts):
             part=lines[start:starts[j+1] if j+1<len(starts) else len(lines)]
             try:
@@ -25,6 +39,8 @@ def parse_pdf(path):
             except (ValueError,AssertionError,StopIteration,IndexError) as e:
                 errors.append(dict(code=part[0],page=page_no,raw=part,error=str(e)))
     if len(set(x['positionCode'] for x in rows))!=len(rows):errors.append({'error':'Duplicate codes'})
+    doc.close()
+    if not rows:errors.append({'error':'No supported placement rows'})
     return rows,errors
 
 def postgres_connection_string():
@@ -44,11 +60,17 @@ def postgres_connection_string():
 
 def commit(rows,errors,path,year,round_no,education):
     if errors: raise ValueError('Unresolved rows: import blocked')
+    actual=document_metadata(path)
+    if (actual['year'],actual['round'],actual['education'])!=(year,round_no,education):raise ValueError('Period/education mismatch')
     import psycopg
     from uuid import uuid4
     sha=hashlib.sha256(Path(path).read_bytes()).hexdigest()
     with psycopg.connect(postgres_connection_string() or "") as conn:
         with conn.cursor() as c:
+            c.execute('SELECT pg_advisory_xact_lock(hashtext(%s))',('historical:'+sha,))
+            c.execute('SELECT "id" FROM "ImportBatch" WHERE "sourceSha256"=%s ORDER BY "createdAt" LIMIT 1',(sha,))
+            previous=c.fetchone()
+            if previous:return previous[0]
             c.execute('INSERT INTO "SourceDocument" ("id","originalFilename","sha256","sourceOrganization") VALUES (%s,%s,%s,%s) ON CONFLICT ("sha256") DO UPDATE SET "sha256"=EXCLUDED."sha256" RETURNING "id"',(str(uuid4()),Path(path).name,sha,'ÖSYM'))
             source=c.fetchone()[0]
             c.execute('INSERT INTO "PlacementRound" ("id","year","sequenceNo","educationLevel") VALUES (%s,%s,%s,%s) ON CONFLICT ("year","sequenceNo","educationLevel") DO UPDATE SET "year"=EXCLUDED."year" RETURNING "id"',(str(uuid4()),year,round_no,education))
@@ -56,15 +78,18 @@ def commit(rows,errors,path,year,round_no,education):
             batch=str(uuid4())
             c.execute('INSERT INTO "ImportBatch" ("id","sourceSha256","rowCount","errorCount") VALUES (%s,%s,%s,%s)',(batch,sha,len(rows),0))
             for r in rows:
+                c.execute('SELECT 1 FROM "HistoricalPlacement" WHERE "roundId"=%s AND "positionCode"=%s',(round_id,r['positionCode']))
+                if c.fetchone():raise ValueError('Existing placement conflict; manual reconciliation required')
                 c.execute('INSERT INTO "ImportRow" ("id","batchId","positionCode","raw","issues","sourcePage") VALUES (%s,%s,%s,%s::jsonb,%s::jsonb,%s)',(str(uuid4()),batch,r['positionCode'],json.dumps(r,ensure_ascii=False),'[]',r['sourcePage']))
                 c.execute('INSERT INTO "HistoricalPlacement" ("id","roundId","sourceDocumentId","positionCode","institutionRawName","title","city","quota","placedCount","vacantCount","minScore","maxScore","sourcePage","rawRecord") VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb) ON CONFLICT ("roundId","positionCode") DO NOTHING',(str(uuid4()),round_id,source,r['positionCode'],r['institutionRawName'],r['title'],r['city'],r['quota'],r['placedCount'],r['vacantCount'],r['minScore'],r['maxScore'],r['sourcePage'],json.dumps(r['rawRecord'],ensure_ascii=False)))
     return batch
 
 if __name__=='__main__':
     p=argparse.ArgumentParser()
-    p.add_argument('--file',required=True);p.add_argument('--year',type=int,default=2024);p.add_argument('--round',type=int,default=1);p.add_argument('--education',default='BACHELOR')
-    g=p.add_mutually_exclusive_group(required=True);g.add_argument('--dry-run',action='store_true');g.add_argument('--commit',action='store_true')
+    p.add_argument('--file',required=True);p.add_argument('--year',type=int,default=2024);p.add_argument('--round',type=int,default=1);p.add_argument('--education',choices=['BACHELOR','ASSOCIATE','HIGH_SCHOOL'])
+    g=p.add_mutually_exclusive_group(required=True);g.add_argument('--dry-run',action='store_true');g.add_argument('--commit',action='store_true');g.add_argument('--parse-json',action='store_true')
     a=p.parse_args();rows,errors=parse_pdf(a.file)
+    if a.parse_json:print(json.dumps({'rows':rows,'errors':errors,'metadata':document_metadata(a.file)},ensure_ascii=True));raise SystemExit(0)
     print(json.dumps({'parsed':len(rows),'unresolved':len(errors),'issues':errors[:10]},ensure_ascii=False))
     if a.dry_run:Path('historical-staging.json').write_text(json.dumps({'rows':rows,'errors':errors},ensure_ascii=False,indent=2))
-    else:print('STAGED (not approved):',commit(rows,errors,a.file,a.year,a.round,a.education))
+    else:print('STAGED (not approved):',commit(rows,errors,a.file,a.year,a.round,a.education or document_metadata(a.file)['education']))

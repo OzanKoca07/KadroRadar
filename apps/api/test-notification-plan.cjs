@@ -1,0 +1,12 @@
+const assert=require('node:assert/strict');const {notificationPlan}=require('./dist/notification-plan');
+const now=new Date(),p={notificationConsent:true};
+const a={id:'fixture',status:'PUBLISHED',sourceCheckedAt:now,publishedAt:now,applicationStartAt:new Date(Date.now()-10000),applicationEndAt:new Date(Date.now()+10000),positions:[{verifiedAt:now,requirements:{complete:true,kpssRequired:false}}]};
+assert.equal(notificationPlan({},[a],[],now).length,0);
+assert.equal(notificationPlan(p,[a],[],now).length,2);
+assert.equal(notificationPlan(p,[{...a,positions:[]}],[],now).length,0);
+assert.equal(notificationPlan(p,[{...a,applicationEndAt:null}],[],now).length,0);
+assert.equal(notificationPlan(p,[{...a,status:'WITHDRAWN'}],[],now).length,0);
+assert.equal(notificationPlan(p,[{...a,positions:[{verifiedAt:null,requirements:{complete:true,kpssRequired:false}}]}],[],now).length,0);
+assert.equal(notificationPlan(p,[],[{createdAt:new Date(Date.now()-1000),announcement:{...a,status:'WITHDRAWN',updatedAt:now}}],now)[0].kind,'WITHDRAWN');
+assert.equal(notificationPlan(p,[],[{createdAt:new Date(Date.now()-1000),lastKnownEndAt:new Date(now.getTime()-1000),announcement:{...a,updatedAt:now}}],now)[0].kind,'EXTENDED');
+console.log('PASS: 8 consent, matching uncertainty, deadline, extension and withdrawal notification checks');

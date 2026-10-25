@@ -1,0 +1,99 @@
+{
+  "energy": {
+    "id": "energy",
+    "organization": "T.C. Enerji ve Tabii Kaynaklar Bakanlığı",
+    "hosts": [
+      "enerji.gov.tr"
+    ],
+    "feed": "https://enerji.gov.tr/RSS/15?t=1",
+    "format": "rss",
+    "enabled": false,
+    "automationPermission": "RSS_READING_ONLY",
+    "republicationPermission": "UNVERIFIED"
+  },
+  "sbb": {
+    "id": "sbb",
+    "organization": "Strateji ve Bütçe Başkanlığı",
+    "hosts": [
+      "kamuilan.sbb.gov.tr"
+    ],
+    "feed": "https://kamuilan.sbb.gov.tr/",
+    "format": "html",
+    "enabled": false,
+    "automationPermission": "UNVERIFIED",
+    "republicationPermission": "UNVERIFIED"
+  },
+  "career": {
+    "id": "career",
+    "organization": "Kariyer Kapısı",
+    "hosts": [
+      "kariyerkapisi.gov.tr"
+    ],
+    "feed": "https://kariyerkapisi.gov.tr/isealim",
+    "format": "html",
+    "enabled": false,
+    "automationPermission": "UNVERIFIED",
+    "republicationPermission": "UNVERIFIED"
+  },
+  "iskur": {
+    "id": "iskur",
+    "organization": "İŞKUR",
+    "hosts": [
+      "esube.iskur.gov.tr"
+    ],
+    "feed": "https://esube.iskur.gov.tr/",
+    "format": "html",
+    "enabled": false,
+    "automationPermission": "UNVERIFIED",
+    "republicationPermission": "UNVERIFIED"
+  },
+  "ilan": {
+    "id": "ilan",
+    "organization": "Basın İlan Kurumu",
+    "hosts": [
+      "www.ilan.gov.tr"
+    ],
+    "feed": "https://www.ilan.gov.tr/",
+    "format": "html",
+    "enabled": false,
+    "automationPermission": "UNVERIFIED",
+    "republicationPermission": "UNVERIFIED"
+  },
+  "gazette": {
+    "id": "gazette",
+    "organization": "Resmî Gazete",
+    "hosts": [
+      "www.resmigazete.gov.tr"
+    ],
+    "feed": "https://www.resmigazete.gov.tr/",
+    "format": "html",
+    "enabled": false,
+    "automationPermission": "UNVERIFIED",
+    "republicationPermission": "UNVERIFIED"
+  },
+  "uab": {
+    "id": "uab",
+    "organization": "Ulaştırma ve Altyapı Bakanlığı",
+    "hosts": [
+      "www.uab.gov.tr"
+    ],
+    "feed": "https://www.uab.gov.tr/duyurular/",
+    "format": "html",
+    "enabled": false,
+    "automationPermission": "UNVERIFIED",
+    "republicationPermission": "UNVERIFIED"
+  },
+  "osym": {
+    "id": "osym",
+    "organization": "ÖSYM",
+    "hosts": [
+      "www.osym.gov.tr",
+      "dokuman.osym.gov.tr"
+    ],
+    "feed": "https://www.osym.gov.tr/",
+    "format": "historical-pdf",
+    "enabled": false,
+    "automationPermission": "UNVERIFIED",
+    "republicationPermission": "UNVERIFIED"
+  }
+}

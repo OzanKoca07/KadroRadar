@@ -1,0 +1,8 @@
+import React from 'react';
+import {Link} from 'expo-router';
+import {Linking,Pressable,ScrollView,Text} from 'react-native';
+export default function About(){
+ const links=[['Gizlilik politikası',process.env.EXPO_PUBLIC_PRIVACY_URL],['Hesap silme web sayfası',process.env.EXPO_PUBLIC_ACCOUNT_DELETION_URL]];
+ const email=process.env.EXPO_PUBLIC_SUPPORT_EMAIL;
+ return <ScrollView contentContainerStyle={{padding:24,gap:16,backgroundColor:'#F5F7FB'}}><Link href="/">← Ana sayfa</Link><Text style={{fontSize:26,fontWeight:'700'}}>KadroRadar hakkında</Text><Text>KadroRadar bağımsız bir kamu bilgilendirme uygulamasıdır. Hiçbir kamu kurumunu veya siyasi kuruluşu temsil etmez. Başvurular yalnızca ilanda belirtilen resmî dış kanaldan yapılır.</Text><Text>İlan detayındaki resmî kaynak, PDF sayı/tarih/sayfa kanıtı ve kaynak doğrulama durumunu kontrol edin. Uygunluk sonuçları bilgilendirme amaçlıdır; atama olasılığı veya başvuru kabul garantisi değildir.</Text><Text>Güncel ve geçmiş ilanları hesap açmadan görebilirsiniz. Profil bilgileri isteğe bağlıdır. Oturum bu sürümde yalnızca bellekte tutulur; uygulama yeniden açıldığında tekrar giriş gerekir.</Text>{links.map(([label,url])=>url&&/^https:\/\//.test(url)?<Pressable key={label} accessibilityRole="link" onPress={()=>void Linking.openURL(url)}><Text style={{color:'#173B70'}}>{label}</Text></Pressable>:<Text key={label}>{label}: yayın adresi henüz yapılandırılmadı.</Text>)}{email&&<Pressable accessibilityRole="link" onPress={()=>void Linking.openURL('mailto:'+email)}><Text>Destek: {email}</Text></Pressable>}<Text>Hesap silme: Profil → Hesabımı ve profilimi sil. Bildirim izni Profil ekranından açılabilir veya kapatılabilir.</Text></ScrollView>;
+}
