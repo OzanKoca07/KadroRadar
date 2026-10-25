@@ -1,0 +1,44 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    mem_limit: 1g
+    cpus: 2
+    pids_limit: 128
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?Set production database URL}
+      CORS_ORIGINS: ${CORS_ORIGINS:?Set admin HTTPS origin}
+      TRUST_PROXY_HOPS: "1"
+      SOURCE_SYNC_ENABLED: "false"
+      NOTIFICATIONS_ENABLED: "false"
+      ALLOW_SELF_REGISTRATION: "false"
+    expose: ["3000"]
+    volumes:
+      - gazette_documents:/app/.local/gazette
+      - historical_documents:/app/.local/historical
+      - source_state:/app/.local/sources
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?Set public DNS domain}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../web:/srv/kadroradar:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+volumes:
+  gazette_documents:
+  historical_documents:
+  source_state:
+  caddy_data:
+  caddy_config:

@@ -66,3 +66,12 @@ temp/
 
 
 package-lock.json
+.local/
+services/ingest/artifacts/
+
+# TypeScript source output from old emitting builds; source TS/TSX is retained.
+apps/admin/src/*.js
+*.key
+*.pfx
+*.sql.gz
+*.sql.zip

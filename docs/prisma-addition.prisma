@@ -1,0 +1,28 @@
+// Add to the END of apps/api/prisma/schema.prisma.
+// HistoricalPlacement remains separate: an announcement is NOT a placement result.
+model Announcement {
+  id                 String    @id @default(cuid())
+  title              String
+  organization       String
+  city               String?
+  district           String?
+  positionTitle      String?
+  quota              Int?
+  educationLevel     String?
+  summary            String?
+  requirements       String?
+  sourceUrl          String
+  applicationUrl     String?
+  applicationStartAt DateTime?
+  applicationEndAt   DateTime?
+  announcedAt        DateTime?
+  sourceCheckedAt    DateTime?
+  status             String    @default("DRAFT") // DRAFT, PUBLISHED, ARCHIVED, WITHDRAWN
+  publishedAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([status, applicationEndAt])
+  @@index([organization, city])
+  @@index([announcedAt])
+}

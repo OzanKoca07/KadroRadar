@@ -1,0 +1,35 @@
+FROM node:22-bookworm-slim AS build
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/admin/package.json apps/admin/package.json
+COPY apps/mobile/package.json apps/mobile/package.json
+COPY packages/shared/package.json packages/shared/package.json
+RUN timeout 300s pnpm install --frozen-lockfile --ignore-scripts
+COPY packages packages
+COPY apps/api/prisma/schema.prisma apps/api/prisma/schema.prisma
+COPY infra/generate-prisma.cjs infra/generate-prisma.cjs
+RUN timeout 840s node infra/generate-prisma.cjs
+COPY apps/api apps/api
+COPY apps/admin apps/admin
+RUN pnpm --filter @kadro/api build
+RUN VITE_API_BASE_URL=/api/v1 pnpm --filter @kadro/admin build --base=/admin/
+FROM node:22-bookworm-slim AS runtime
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates python3 python3-venv tesseract-ocr tesseract-ocr-tur tesseract-ocr-eng fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
+RUN python3 -m venv /opt/ingest && /opt/ingest/bin/pip install --no-cache-dir 'pymupdf==1.27.2.3'
+COPY --from=build --chown=node:node /app/node_modules /app/node_modules
+COPY --from=build --chown=node:node /app/apps/api /app/apps/api
+COPY --from=build --chown=node:node /app/packages /app/packages
+COPY --from=build --chown=node:node /app/apps/admin/dist /app/public/admin
+COPY --chown=node:node web /app/public/legal
+COPY --chown=node:node services/ingest/official_gazette.py services/ingest/official_rss.py services/ingest/import_historical.py services/ingest/osym_web.py /app/services/ingest/
+RUN mkdir -p /app/.local/gazette /app/.local/historical /app/.local/sources && chown -R node:node /app/.local
+ENV NODE_ENV=production
+ENV INGEST_PYTHON=/opt/ingest/bin/python
+USER node
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||process.env.API_PORT||3000)+'/api/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+CMD ["node", "apps/api/dist/main.js"]

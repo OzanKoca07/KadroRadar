@@ -1,6 +1,16 @@
 name: CI
 on: [push, pull_request]
 jobs:
+  release-secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python infra/check-release-secrets.py
   parser:
     runs-on: ubuntu-latest
     steps:
@@ -10,8 +20,23 @@ jobs:
           python-version: '3.11'
       - run: pip install -r services/ingest/requirements.txt
       - run: python -m unittest discover -s services/ingest/tests -v
+      - run: python -m unittest discover -s services/ingest -p test_official_rss.py -v
+      - run: python -m unittest discover -s services/ingest -p test_manual_import.py -v
+      - run: python -m unittest discover -s services/ingest -p test_official_gazette.py -v
+      - run: python -m unittest discover -s services/ingest -p test_osym_web.py -v
   typescript:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: kadro
+          POSTGRES_PASSWORD: test_only
+          POSTGRES_DB: kadroradar_ingestion_test_ci
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U kadro" --health-interval 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://kadro:test_only@localhost:5432/kadroradar_ingestion_test_ci
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -19,9 +44,21 @@ jobs:
           version: 9
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
-      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @kadro/api prisma:generate
       - run: pnpm --filter @kadro/api build
+      - run: pnpm --filter @kadro/api exec prisma migrate deploy
+      - run: python -m pip install 'pymupdf==1.27.2.3'
+      - run: node test-eligibility.cjs && node test-notification-plan.cjs && node test-mobile-network.cjs && node test-candidate.cjs && node test-notification-worker.cjs && node test-ingestion.cjs && node test-gazette.cjs
+        working-directory: apps/api
       - run: pnpm --filter @kadro/admin build
+      - run: node test-environment.cjs && node test-manual-file.cjs && node test-source-operations.cjs
+        working-directory: apps/api
+      - run: node apps/api/test-auth-capacity.cjs
+      - run: pnpm --filter @kadro/admin exec playwright install --with-deps chromium
+      - run: node apps/api/test-admin-browser.cjs
+      - run: node apps/api/test-legal-browser.cjs
+      - run: node apps/api/test-historical-import.cjs
+      - run: pnpm --filter @kadro/mobile exec tsc --noEmit
