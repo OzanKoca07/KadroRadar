@@ -73,7 +73,7 @@ def discover_index(html,base_url):
         kind='pdf' if parts.path.lower().endswith('.pdf') else 'html' if parts.path.lower().endswith(('.htm','.html')) else 'navigation'
         label=compact(link['label'])
         if kind=='navigation' and not re.search(r'arsiv|ilan|arama',fold(label)):continue
-        stamp=re.search(r'/(20\d{6})(?:[-_]\d+)?\.(?:pdf|html?)$',parts.path,re.I)
+        stamp=re.search(r'/(20\d{6})(?:[-_]\d+)*\.(?:pdf|html?)$',parts.path,re.I)
         observed_date=None
         if stamp:
             try:observed_date=date(int(stamp[1][:4]),int(stamp[1][4:6]),int(stamp[1][6:])).isoformat()
@@ -81,6 +81,33 @@ def discover_index(html,base_url):
         result.append({'url':url,'label':label,'format':kind,'observedDate':observed_date,'supplemental':True if 'mukerrer' in fold(label) else None,'verifiedDownload':False,'automationEnabled':False})
         seen.add(url)
     return result
+
+def index_manifest(html, base_url):
+    """Local, operator-supplied official HTML. This is not a live fetch or permission."""
+    links=discover_index(html,base_url)
+    class Text(HTMLParser):
+        def __init__(self):super().__init__();self.parts=[];self.hidden=0
+        def handle_starttag(self,tag,attrs):
+            if tag in ('script','style'):self.hidden+=1
+        def handle_endtag(self,tag):
+            if tag in ('script','style'):self.hidden=max(0,self.hidden-1)
+        def handle_data(self,data):
+            if not self.hidden:self.parts.append(data)
+    parser=Text();parser.feed(html);text=compact(' '.join(parser.parts));value=fold(text)
+    # The index uses "26 Ekim 2026 Tarihli ve 33412 Sayılı" rather than PDF "Sayı :".
+    stamp=metadata(text)
+    if not stamp:
+        match=re.search(r'(\d{1,2})\s+('+'|'.join(MONTHS)+r')\s+(20\d{2})\s+tarihli\s+ve\s+(\d{4,6})\s+sayili',value)
+        if match:
+            try:stamp=(date(int(match[3]),MONTHS[match[2]],int(match[1])).isoformat(),match[4])
+            except ValueError:pass
+    # A search dropdown mentioning Mükerrer does not establish this issue as supplemental.
+    issue_heading=re.search(r'tarihli\s+ve\s+\d{4,6}\s+sayili\s+(?:(\d+)\.?\s*mukerrer\s+)?resmi gazete(?:\s*\((\d+)\.?\s*mukerrer\))?',value)
+    supplement_number=next((int(v) for v in issue_heading.groups() if v),None) if issue_heading else None
+    for link in links:
+        label=fold(link['label'])
+        link['section']='TENDER' if 'ihale' in label else 'COURT' if 'yargi' in label else 'MISCELLANEOUS' if 'cesitli' in label else None
+    return {'kind':'GAZETTE_INDEX','indexUrl':base_url,'htmlSha256':hashlib.sha256(html.encode('utf-8')).hexdigest(),'gazetteDate':stamp[0] if stamp else None,'gazetteNumber':stamp[1] if stamp else None,'supplementNumber':supplement_number,'links':links,'issues':[] if stamp else ['MISSING_GAZETTE_METADATA'],'provenance':'OPERATOR_SUPPLIED_HTML','liveFetch':False,'automationEnabled':False,'reviewRequired':True}
 
 def normalize(text):
     return unicodedata.normalize('NFKC', text).replace('\u00a0', ' ').replace('\u00ad', '')
@@ -144,7 +171,7 @@ def positions_from_table(rows, page, table_no, whole_text):
     result = []
     headers = [fold(compact(cell)) for cell in rows[0]] if rows else []
     title_idx = next((i for i,h in enumerate(headers) if 'unvan' in h), None)
-    quota_idx = next((i for i,h in enumerate(headers) if 'adedi' in h or 'kontenjan' in h or 'sayisi' in h), None)
+    quota_idx = next((i for i,h in enumerate(headers) if re.search(r'\badet\b|adedi|kontenjan|sayisi',h)), None)
     for row_no, raw in enumerate(rows):
         cells = [compact(cell) for cell in raw]
         if title_idx is not None and quota_idx is not None:
@@ -158,23 +185,29 @@ def positions_from_table(rows, page, table_no, whole_text):
         if not title or not quota or int(quota[1]) < 1: continue
         combined = ' '.join(cells)
         value = fold(combined)
-        score_types = sorted(set(re.findall(r'\bp\s*(\d{1,3})\b', value)))
+        score_types = sorted(set(re.findall(r'(?:\bkpss\s*[-/]?\s*|\b)p\s*(3|93|94)\b', value)))
         minimum = re.search(r'en az\s*(\d{1,3}(?:[.,]\d+)?)\s*puan', value)
         years = sorted(set(re.findall(r'\b(20\d{2})\b', combined)))
         if not years:
             years = sorted(set(re.findall(r'\b(20\d{2})\s+(?:yili\s+)?(?:kamu personeli secme sinavi|kpss)', fold(compact(whole_text)))))
         conditions = {'complete':False,'degreeCodesVerified':False,'otherConditions':['Genel ve özel şartlar kaynak PDF ile ayrıca incelenmelidir.']}
         if len(score_types) == 1: conditions.update(kpssRequired=True,kpssScoreType='P'+score_types[0])
-        if minimum and float(minimum[1].replace(',','.')) <= 100: conditions['kpssMinimumScore'] = float(minimum[1].replace(',','.'))
-        if len(years) == 1: conditions['examYears'] = [int(years[0])]
+        if len(score_types)==1 and minimum and float(minimum[1].replace(',','.')) <= 100: conditions['kpssMinimumScore'] = float(minimum[1].replace(',','.'))
+        if len(score_types)==1 and len(years) == 1: conditions['examYears'] = [int(years[0])]
         if 'ortaogretim' in value: conditions['educationLevels'] = ['ORTAOGRETIM']
         elif re.search(r'on\s*lisans', value): conditions['educationLevels'] = ['ONLISANS']
+        elif re.search(r'\blisans\b', value): conditions['educationLevels'] = ['LISANS']
+        expected={'P3':'LISANS','P93':'ONLISANS','P94':'ORTAOGRETIM'}.get(conditions.get('kpssScoreType'))
+        if expected and conditions.get('educationLevels') and conditions['educationLevels']!=[expected]:
+            conditions.pop('kpssScoreType',None)
+            conditions['otherConditions'].append('KPSS_SCORE_EDUCATION_CONFLICT')
         if re.search(r'\(?b\)?\s*sinifi\s*(?:surucu|ehliyet)|\bb\s+sinifi\s+ehliyet', value): conditions['certificates'] = ['DRIVING_LICENSE_B']
         result.append({'title':title,'quota':int(quota[1]),'requirements':conditions,'sourceEvidence':evidence(page,combined,table_no,row_no),'qualificationText':combined,'parserPositionKey':f'{page}:{table_no}:{row_no}'})
     return result
 
 def dates_from_pages(pages):
-    result = {'applicationStartAt':None,'applicationEndAt':None,'applicationUrl':None,'dateEvidence':[],'dateSuggestions':[]}
+    result = {'applicationStartAt':None,'applicationEndAt':None,'applicationUrl':None,'dateEvidence':[],'dateSuggestions':[],'dateIssues':[]}
+    verified_dates=set()
     for p in pages:
         text = compact(p['text'])
         value = fold(text)
@@ -187,7 +220,11 @@ def dates_from_pages(pages):
                 hh,mm=map(int,re.split('[:.]',hour))
                 if hh>23 or mm>59: raise ValueError('Invalid source hour')
                 return f'{y:04d}-{m:02d}-{d:02d}T{hh:02d}:{mm:02d}:00+03:00'
-            result.update(applicationStartAt=stamp(dates[1],hours[1]),applicationEndAt=stamp(dates[2],hours[2]))
+            try:
+                start,end=stamp(dates[1],hours[1]),stamp(dates[2],hours[2])
+                if start>end:raise ValueError('Reversed dates')
+                verified_dates.add((start,end))
+            except ValueError:result['dateIssues'].append('INVALID_APPLICATION_DATES')
             result['dateEvidence'].append(evidence(p['page'],text[max(0,dates.start()-30):hours.end()+40]))
         if 'basvuru' in value:
             for match in re.finditer(r'(\d{2}/\d{2}/20\d{2})\s*[-–]\s*(\d{2}/\d{2}/20\d{2})', text):
@@ -197,7 +234,73 @@ def dates_from_pages(pages):
             if 'basvuru' in value:
                 result['applicationUrl']=match[0]
                 result['dateEvidence'].append(evidence(p['page'],text[max(0,match.start()-100):match.end()+100]))
+    if len(verified_dates)==1 and not result['dateIssues']:
+        result['applicationStartAt'],result['applicationEndAt']=next(iter(verified_dates))
+    elif len(verified_dates)>1:result['dateIssues'].append('CONFLICTING_APPLICATION_DATES')
     return result
+
+def decode_official_html(data):
+    """Honor a declared Turkish legacy encoding; never silently replace glyphs."""
+    declared=re.search(br'charset\s*=\s*[\"\']?([a-zA-Z0-9_-]+)',data[:4096],re.I)
+    encoding=declared[1].decode('ascii').lower() if declared else 'utf-8-sig'
+    allowed={'utf-8':'utf-8-sig','utf-8-sig':'utf-8-sig','windows-1254':'cp1254',
+             'cp1254':'cp1254','iso-8859-9':'iso-8859-9'}
+    if encoding not in allowed:raise ValueError('UNSUPPORTED_HTML_CHARSET')
+    return data.decode(allowed[encoding]),encoding
+
+def parse_notice_html(path, source_url):
+    """Local HTML only. Script/style contents and external resources are ignored."""
+    discover_index('',source_url)  # exact-host HTTPS validation, without fetching
+    data=Path(path).read_bytes()
+    if len(data)>2_000_000:raise ValueError('HTML_SIZE_LIMIT')
+    html,encoding=decode_official_html(data)
+    class Notice(HTMLParser):
+        def __init__(self):super().__init__();self.parts=[];self.tables=[];self.table=None;self.row=None;self.cell=None;self.hidden=0
+        def handle_starttag(self,tag,attrs):
+            if tag in ('script','style'):self.hidden+=1
+            if self.hidden:return
+            if tag in ('p','div','h1','h2','h3','br','tr'):self.parts.append('\n')
+            if tag=='table':self.table=[];self.parts.append(f'\nKR_TABLE_{len(self.tables)}\n')
+            if tag=='tr':self.row=[]
+            if tag in ('td','th'):self.cell=[]
+        def handle_endtag(self,tag):
+            if tag in ('script','style'):self.hidden=max(0,self.hidden-1);return
+            if self.hidden:return
+            if tag in ('td','th') and self.cell is not None:
+                if self.row is not None:self.row.append(compact(' '.join(self.cell)))
+                self.cell=None;self.parts.append(' ')
+            if tag=='tr' and self.row is not None:
+                if self.table is not None:self.table.append(self.row)
+                self.row=None
+            if tag=='table' and self.table is not None:self.tables.append(self.table);self.table=None
+            if tag in ('p','div','h1','h2','h3','tr'):self.parts.append('\n')
+        def handle_data(self,value):
+            if not self.hidden:
+                self.parts.append(value)
+                if self.cell is not None:self.cell.append(value)
+    parser=Notice();parser.feed(html);text=normalize(''.join(parser.parts));stamp=metadata(text)
+    groups=[];active=None
+    for line_no,line in enumerate(text.splitlines(),1):
+        org=heading(line)
+        if org:
+            if active:groups.append(active)
+            active={'organization':org,'lines':[],'lineStart':line_no}
+        if active:active['lines'].append(line)
+    if active:groups.append(active)
+    digest=hashlib.sha256(data).hexdigest();candidates=[]
+    for group in groups:
+        body='\n'.join(group['lines'])
+        if classify(body)!='PERSONNEL':continue
+        positions=[]
+        for match in re.finditer(r'KR_TABLE_(\d+)',body):
+            number=int(match[1])
+            if number<len(parser.tables):positions.extend(positions_from_table(parser.tables[number],1,number,body))
+        timing=dates_from_pages([{'page':1,'text':body}]);issues=timing.pop('dateIssues')+['HTML_SOURCE_REVIEW_REQUIRED','POSITION_COVERAGE_REQUIRES_REVIEW']
+        if not positions:issues.append('POSITIONS_NOT_PARSED')
+        if not timing['applicationEndAt'] or not timing['applicationStartAt']:issues.append('APPLICATION_DATES_REQUIRE_REVIEW')
+        source={'kind':'OFFICIAL_GAZETTE','format':'HTML','encoding':encoding,'pageLocator':'LOGICAL_SECTION_NOT_PDF_PAGE','sectionStartLine':group['lineStart'],'pageStart':1,'pageEnd':1,'pdfSha256':None,'documentSha256':digest,'gazetteDate':stamp[0] if stamp else None,'gazetteNumber':stamp[1] if stamp else None,'sourceUrl':source_url,'dateEvidence':timing.pop('dateEvidence'),'dateSuggestions':timing.pop('dateSuggestions')}
+        candidates.append({'identity':f'urn:kadroradar:gazette-html:{digest}:{group["lineStart"]}','organization':group['organization'],'title':group['organization']+' - Personel alım duyurusu','sourceUrl':source_url,'sourceEvidence':source,'positions':positions,'quota':sum(p['quota'] for p in positions) if positions else None,'requirements':body[:18000],'issues':issues,'reviewRequired':True,'eventType':event_type(body),**timing})
+    return {'parserVersion':'gazette-html-1','format':'HTML','sha256':digest,'pageCount':1,'inspectedPages':1,'gazetteDate':stamp[0] if stamp else None,'gazetteNumber':stamp[1] if stamp else None,'documentIssues':[] if groups else ['ORGANIZATION_NOT_IDENTIFIED'],'pageReports':[{'page':1,'issues':['HTML_SOURCE_REVIEW_REQUIRED'],'textCharacters':len(text),'ocr':None}],'candidates':candidates,'metrics':{'candidateCount':len(candidates),'positionRows':sum(len(c['positions']) for c in candidates),'flaggedPages':1,'ocrAttempted':0,'ocrSucceeded':0}}
 
 def parse_pdf(path, source_url=None, include_tables=True, ocr_pages=None):
     path = Path(path)
@@ -232,21 +335,40 @@ def parse_pdf(path, source_url=None, include_tables=True, ocr_pages=None):
             if stamp: metadata_votes.append(stamp)
             printed=re.search(r'Sayfa\s*:\s*(\d+)',text)
             entry={'page':index+1,'printedPage':int(printed[1]) if printed else None,'text':text,'issues':issues,'tables':[],'ocr':ocr}
+            located_tables=[]
             if include_tables and not native_quality_issues:
                 try:
                     with contextlib.redirect_stdout(io.StringIO()):
-                        entry['tables']=[t.extract() for t in page.find_tables().tables]
+                        located_tables=[(t.bbox,t.extract()) for t in page.find_tables().tables]
+                        entry['tables']=[rows for _,rows in located_tables]
                 except Exception:
                     entry['issues'].append('TABLE_EXTRACTION_FAILED')
             pages.append(entry)
-            starts=[h for h in (heading(line) for line in text.splitlines()) if h]
-            if starts:
-                if active: groups.append(active)
-                active={'organization':starts[0],'pages':[]}
-                if len(starts)>1:entry['issues'].append('MULTIPLE_ORGANIZATIONS_ON_PAGE')
-            if active:
-                active['pages'].append(entry)
-                if re.search(r'\b\d{3,6}/\d{1,2}-\d{1,2}\s*$',text.strip()): groups.append(active);active=None
+            # A new notice can start below the previous notice's table on the
+            # SAME physical page. Assign tables by geometry, not page ownership.
+            heading_y=[]
+            for block in page.get_text('dict')['blocks']:
+                for line in block.get('lines',[]):
+                    if heading(''.join(span['text'] for span in line['spans'])):
+                        heading_y.append(max(0,line['bbox'][1]-0.5))
+            cuts=sorted(set([0.0,*heading_y,float(page.rect.height)]))
+            segments=[entry] if len(cuts)==2 else []
+            if not segments:
+                for low,high in zip(cuts,cuts[1:]):
+                    segment_text=normalize(page.get_text(clip=fitz.Rect(0,low,page.rect.width,high),sort=True))
+                    if not segment_text.strip():continue
+                    selected=[(n,rows) for n,(box,rows) in enumerate(located_tables) if low<=box[1]<high]
+                    segments.append({**entry,'text':segment_text,'tables':[rows for _,rows in selected],
+                                     'tableNumbers':[n for n,_ in selected]})
+            for segment in segments:
+                starts=[h for h in (heading(line) for line in segment['text'].splitlines()) if h]
+                if starts:
+                    if active:groups.append(active)
+                    active={'organization':starts[0],'pages':[]}
+                    if len(starts)>1:segment['issues']=segment['issues']+['MULTIPLE_ORGANIZATIONS_ON_PAGE']
+                if active:
+                    active['pages'].append(segment)
+                    if re.search(r'\b\d{3,6}/\d{1,2}-\d{1,2}\s*$',segment['text'].strip()):groups.append(active);active=None
         if active:groups.append(active)
         chosen=Counter(metadata_votes).most_common(1)
         gazette_date,gazette_number=chosen[0][0] if chosen else (None,None)
@@ -262,10 +384,17 @@ def parse_pdf(path, source_url=None, include_tables=True, ocr_pages=None):
             advertisement=re.findall(r'\b\d{3,6}/\d{1,2}-\d{1,2}\b',text)
             identity=advertisement[-1] if advertisement else hashlib.sha256(compact(text).encode()).hexdigest()[:20]
             positions=[]
+            last_header=None
             for page in group['pages']:
-                for table_no,table in enumerate(page['tables']):positions.extend(positions_from_table(table,page['page'],table_no,text))
+                for ordinal,table in enumerate(page['tables']):
+                    table_no=page.get('tableNumbers',list(range(len(page['tables']))))[ordinal]
+                    header=[fold(compact(c)) for c in table[0]] if table else []
+                    if any('unvan' in c for c in header):last_header=table[0]
+                    elif last_header and table and len(table[0])==len(last_header):
+                        table=[last_header,*table]
+                    positions.extend(positions_from_table(table,page['page'],table_no,text))
             timing=dates_from_pages(group['pages'])
-            issues=list(doc_issues)+sorted(set(issue for p in group['pages'] for issue in p['issues']))
+            issues=list(doc_issues)+sorted(set(issue for p in group['pages'] for issue in p['issues']))+timing.pop('dateIssues')
             if not positions:issues.append('POSITIONS_NOT_PARSED')
             if len(text)>18000:issues.append('BODY_TEXT_TRUNCATED_REVIEW_PDF')
             if not timing['applicationStartAt'] or not timing['applicationEndAt']:issues.append('APPLICATION_DATES_REQUIRE_REVIEW')
@@ -274,6 +403,6 @@ def parse_pdf(path, source_url=None, include_tables=True, ocr_pages=None):
         return {'parserVersion':'gazette-1','sha256':digest,'pageCount':len(document),'inspectedPages':len(pages),'gazetteDate':gazette_date,'gazetteNumber':gazette_number,'documentIssues':doc_issues,'pageReports':[{'page':p['page'],'printedPage':p['printedPage'],'issues':p['issues'],'textCharacters':len(p['text']),'ocr':p['ocr']} for p in pages],'candidates':candidates,'metrics':{'candidateCount':len(candidates),'positionRows':sum(len(c['positions']) for c in candidates),'flaggedPages':sum(bool(p['issues']) for p in pages),'ocrAttempted':sum(p['ocr'] is not None for p in pages),'ocrSucceeded':sum(bool(p['ocr'] and 'text' in p['ocr']) for p in pages)}}
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('pdf',type=Path);parser.add_argument('--ocr-pages',help='Explicit flagged pages only, comma-separated, at most10');args=parser.parse_args()
-    try:print(json.dumps(parse_pdf(args.pdf,ocr_pages=set(map(int,args.ocr_pages.split(','))) if args.ocr_pages else None),ensure_ascii=True))
+    parser=argparse.ArgumentParser();parser.add_argument('pdf',type=Path);parser.add_argument('--index-url');parser.add_argument('--notice-url');parser.add_argument('--ocr-pages',help='Explicit flagged pages only, comma-separated, at most10');args=parser.parse_args()
+    try:print(json.dumps(index_manifest(decode_official_html(args.pdf.read_bytes())[0],args.index_url) if args.index_url else parse_notice_html(args.pdf,args.notice_url) if args.notice_url else parse_pdf(args.pdf,ocr_pages=set(map(int,args.ocr_pages.split(','))) if args.ocr_pages else None),ensure_ascii=True))
     except Exception as error:print(json.dumps({'error':str(error)[:200],'errorType':type(error).__name__}));raise SystemExit(1)

@@ -4,9 +4,54 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 import fitz
-from official_gazette import MAX_BYTES,classify,metadata,page_quality,positions_from_table,event_type,parse_pdf,dates_from_pages,discover_index
+from official_gazette import MAX_BYTES,classify,metadata,page_quality,positions_from_table,event_type,parse_pdf,dates_from_pages,discover_index,index_manifest,parse_notice_html,decode_official_html
 
 class GazetteTests(unittest.TestCase):
+    def test_declared_turkish_charset_and_observed_document_suffix(self):
+        html='<meta charset="Windows-1254"><a href="20261026-4-1.pdf">Dokuz Eylül Üniversitesi</a>'
+        decoded,encoding=decode_official_html(html.encode('cp1254'))
+        self.assertEqual(decoded,html);self.assertEqual(encoding,'windows-1254')
+        self.assertEqual(discover_index(decoded,'https://www.resmigazete.gov.tr/ilanlar/eskiilanlar/2026/10/20261026-4.htm')[0]['observedDate'],'2026-10-26')
+        with self.assertRaises(ValueError):decode_official_html(b'<meta charset="utf-7">')
+        with self.assertRaises(UnicodeDecodeError):decode_official_html(b'\xff')
+
+    def test_academic_adet_is_quota_without_invented_kpss(self):
+        rows=positions_from_table([['Birim','Ünvan','Adet','Nitelikler'],['Fakülte','Profesör','1','Doçentliğini almış olmak. Yabancı dil sınavından en az 82 puan.']],1,0,'')
+        self.assertEqual(rows[0]['quota'],1)
+        self.assertNotIn('kpssScoreType',rows[0]['requirements'])
+        self.assertNotIn('kpssMinimumScore',rows[0]['requirements'])
+        self.assertFalse(rows[0]['requirements']['complete'])
+
+    def test_local_html_notices_preserve_positions_and_do_not_execute_script(self):
+        html='<h2>1 Ekim 2026 Sayı : 99999</h2><h3>Örnek Üniversitesi Rektörlüğünden:</h3><p>Personel alım ilanı</p><table><tr><th>Unvan</th><th>Kontenjan</th><th>Şartlar</th></tr><tr><td>Memur</td><td>2</td><td>Lisans KPSSP3 en az 70 puan</td></tr></table><script>4734 sayılı ihale ilanı</script><h3>Örnek Bakanlığından:</h3><p>4734 sayılı ihale ilanı</p>'
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'notice.html';path.write_text(html,encoding='utf-8')
+            result=parse_notice_html(path,'https://www.resmigazete.gov.tr/ilanlar/fixture.htm')
+            self.assertEqual(len(result['candidates']),1);self.assertEqual(result['metrics']['positionRows'],1)
+            item=result['candidates'][0];self.assertEqual(item['positions'][0]['requirements']['kpssScoreType'],'P3');self.assertIsNone(item['applicationEndAt']);self.assertEqual(item['sourceEvidence']['format'],'HTML');self.assertTrue(item['reviewRequired'])
+            with self.assertRaises(ValueError):parse_notice_html(path,'https://evil.test/fixture.htm')
+    def test_local_index_manifest_and_sections(self):
+        html='<h2>26 Ekim 2026 Tarihli ve 33412 Sayılı Resmî Gazete</h2><select><option>Mükerrer</option></select><a href="/eskiler/2026/10/20261026.pdf">PDF Görüntüle</a><a href="/ilanlar/eskiilanlar/2026/10/20261026-4.htm">c - Çeşitli İlânlar</a><a href="/ilanlar/x.htm">İhale İlânları</a>'
+        result=index_manifest(html,'https://www.resmigazete.gov.tr/')
+        self.assertEqual((result['gazetteDate'],result['gazetteNumber']),('2026-10-26','33412'))
+        self.assertIsNone(result['supplementNumber']);self.assertFalse(result['liveFetch']);self.assertEqual(len(result['htmlSha256']),64)
+        self.assertEqual(result['links'][1]['section'],'MISCELLANEOUS');self.assertEqual(result['links'][2]['section'],'TENDER')
+        supplemental=index_manifest(html.replace('Resmî Gazete</h2>','Resmî Gazete (2. Mükerrer)</h2>'),'https://www.resmigazete.gov.tr/')
+        self.assertEqual(supplemental['supplementNumber'],2)
+        self.assertNotEqual(supplemental['htmlSha256'],result['htmlSha256'])
+
+    def test_exact_score_types_and_bachelor(self):
+        for score,level,degree in [('3','LISANS','Lisans'),('93','ONLISANS','Önlisans'),('94','ORTAOGRETIM','Ortaöğretim')]:
+            row=positions_from_table([['Unvan','Kontenjan','Şartlar'],['Memur','2',f'{degree} mezunu KPSSP{score} en az 70 puan']],1,0,'')[0]
+            self.assertEqual(row['requirements']['kpssScoreType'],'P'+score);self.assertEqual(row['requirements']['educationLevels'],[level]);self.assertFalse(row['requirements']['complete'])
+        conflict=positions_from_table([['Unvan','Kontenjan','Şartlar'],['Memur','1','Lisans KPSSP94']],1,0,'')[0]
+        self.assertNotIn('kpssScoreType',conflict['requirements'])
+
+    def test_conflicting_or_invalid_dates_stay_unknown(self):
+        template='Başvuru tarihleri: 01.10.2026 - {} sona erecektir. Başlangıç tarihinde saat 09:00 bitiş tarihinde saat 17:00'
+        result=dates_from_pages([{'page':1,'text':template.format('20.10.2026')},{'page':2,'text':template.format('21.10.2026')}])
+        self.assertIsNone(result['applicationEndAt']);self.assertIn('CONFLICTING_APPLICATION_DATES',result['dateIssues'])
+        invalid=dates_from_pages([{'page':1,'text':template.format('31.02.2026')}]);self.assertIsNone(invalid['applicationEndAt']);self.assertIn('INVALID_APPLICATION_DATES',invalid['dateIssues'])
     def test_html_discovery_is_observed_only(self):
         html='<a href="/eskiler/2026/09/20260924.pdf">1. Mükerrer PDF</a><a href="http://127.0.0.1/private.pdf">bad</a><a href="https://www.resmigazete.gov.tr.evil.test/a.pdf">bad</a>'
         links=discover_index(html,'https://www.resmigazete.gov.tr/')

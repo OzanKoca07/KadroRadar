@@ -4,6 +4,8 @@ Bağımsız kamu ilanı ve ÖSYM geçmiş yerleştirme uygulaması. NestJS/Prism
 
 ## Release belgeleri
 
+- [Render ÖSYM aktarımı: kaynaklar, pilot ve güvenli operatör komutları](docs/RENDER_OSYM_DATA_IMPORT.md)
+- [Günlük Resmî Gazete ve yayın operasyonu](docs/DAILY_GAZETTE_OPERATIONS.md)
 - [ÖSYM dönem genişletmesi ve 18 belge test raporu](docs/OSYM_HISTORICAL_EXPANSION.md)
 
 - [Render kurulumu](docs/RENDER_DEPLOYMENT_SETUP.md)

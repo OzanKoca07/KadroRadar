@@ -1,0 +1,11 @@
+const assert=require('node:assert/strict'),{automaticIndexingAllowed,indexingAssessment}=require('./dist/source-indexing-policy'),{adapterStatus}=require('./dist/source-adapter-contract'),{publicAnnouncement}=require('./dist/public-announcement'),registry=require('../../packages/official-sources.json');
+assert.equal(automaticIndexingAllowed(registry.energy),false);
+assert.equal(automaticIndexingAllowed({...registry.energy,enabled:true,republicationPermission:'UNVERIFIED'}),true);
+assert.equal(automaticIndexingAllowed({...registry.energy,enabled:true,indexingPolicy:{automatedAccess:'DISALLOWED'}}),false);
+assert.equal(indexingAssessment({}).automatedAccess,'REVIEW_REQUIRED');
+assert.equal(adapterStatus(registry.sbb).reason,'ACCESS_ASSESSMENT_REQUIRED');
+const raw='PRIVATE_FULL_DOCUMENT_DO_NOT_PUBLISH';
+const item={id:'fixture',title:'Personel alım ilanı',organization:'Test Kurumu',summary:raw,requirements:raw,sourceUrl:'https://enerji.gov.tr/detail',applicationUrl:'https://enerji.gov.tr/apply',sourceEvidence:{kind:'OFFICIAL_GAZETTE',documentSha256:'a'.repeat(64),dateSuggestions:[{text:raw}],text:raw,index:{indexUrl:'https://www.resmigazete.gov.tr/',body:raw}},positions:[{id:'p',title:'Memur',requirements:{kpssRequired:true,kpssScoreType:'P3',kpssMinimumScore:70,educationLevels:['LISANS'],otherConditions:[raw],complete:true},sourceEvidence:{text:raw,page:1}}],sourceReferences:[{importRow:{sourceUrl:'https://www.resmigazete.gov.tr/official.pdf'},evidence:{text:raw,documentSha256:'b'.repeat(64)}}]};
+const value=publicAnnouncement({...item,updatedAt:'2026-10-26T12:00:00Z'});assert.equal(value.updatedAt,'2026-10-26T12:00:00Z');assert.ok(!JSON.stringify(value).includes(raw));assert.equal(value.requirements,undefined);assert.equal(value.summary,undefined);assert.equal(value.positions[0].requirements.kpssMinimumScore,70);assert.equal(value.positions[0].requirements.complete,false);assert.equal(value.sourceReferences[0].sourceUrl,'https://www.resmigazete.gov.tr/official.pdf');assert.equal(value.sourceEvidence.documentSha256,'a'.repeat(64));
+assert.equal(publicAnnouncement({...item,sourceUrl:'https://evil.test/'}).sourceUrl,null);
+console.log('PASS: indexing/access/full-document publication separated, unknown is review not prohibition, facts retained, full text/raw evidence removed, official source links retained; no activation');

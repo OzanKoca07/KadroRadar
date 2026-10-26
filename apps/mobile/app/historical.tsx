@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
+import {historicalRequest} from '../lib/historical-api';
 
 type Placement = { id: string; positionCode: string; title: string; institutionRawName: string; city: string | null; minScore: string | null; maxScore: string | null; quota: number; placedCount: number; vacantCount: number; round: { year: number; sequenceNo: number; educationLevel: string } };
 type ApiPage = { items: Placement[]; total: number; page: number; pages: number; qualificationNote: string };
 type Round = { id: string; year: number; sequenceNo: number; educationLevel: string };
-const BASE = process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:3000/api/v1';
 const showScore = (v: string | null) => v == null ? '—' : Number(v).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 5 });
 
 export default function Historical() {
@@ -27,16 +27,18 @@ export default function Historical() {
 
   useEffect(() => {
     let alive = true;
-    fetch(`${BASE}/historical/rounds`).then(async r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+    const controller=new AbortController();
+    historicalRequest('/historical/rounds',controller.signal)
       .then((data: Round[]) => { if (alive) setRounds(data); })
       .catch(() => { if (alive) setError('Dönem bilgileri alınamadı. İnternet bağlantını kontrol et.'); });
-    return () => { alive = false; };
+    return () => { alive = false;controller.abort(); };
   }, [refreshKey]);
 
   useEffect(() => { setPage(1); }, [query, city, selected?.id,year]);
   useEffect(() => {
     let alive = true;
     const controller = new AbortController();
+    setRows([]);setTotal(0);setPages(0);setLoading(true);setError('');
     const timer = setTimeout(async () => {
       setLoading(true); setError('');
       try {
@@ -45,9 +47,7 @@ export default function Historical() {
         else if(year!=='all')params.set('year',year);
         if (query.trim()) params.set('title', query.trim());
         if (city.trim()) params.set('city', city.trim());
-        const res = await fetch(`${BASE}/historical/placements?${params.toString()}`, { signal: controller.signal });
-        if (!res.ok) throw new Error(`Sunucu hatası (${res.status})`);
-        const body: ApiPage = await res.json();
+        const body: ApiPage = await historicalRequest(`/historical/placements?${params.toString()}`,controller.signal);
         if (alive) { setRows(body.items); setTotal(body.total); setPages(body.pages); }
       } catch (e) {
         if (alive && !controller.signal.aborted) setError(e instanceof Error ? e.message : 'Veriler yüklenemedi');

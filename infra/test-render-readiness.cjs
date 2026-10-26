@@ -17,7 +17,7 @@ async function cli(args,env=[]){return docker('exec',...env.flatMap(([key,value]
  assert.ok(database.startsWith('kadroradar_ingestion_test_'));
  docker('network','create',network);
  docker('run','-d','--name',db,'--network',network,'--network-alias','db','--tmpfs','/var/lib/postgresql/data','-e','POSTGRES_USER=fixture','-e','POSTGRES_DB='+database,'-e','POSTGRES_PASSWORD='+password,'postgres:16-alpine');
- for(let i=0;i<60;i++){try{docker('exec',db,'pg_isready','-U','fixture','-d',database);break;}catch{}await delay(500);}
+ for(let i=0;i<60;i++){try{docker('exec',db,'pg_isready','-h','127.0.0.1','-U','fixture','-d',database);break;}catch{}await delay(500);}
  assert.equal(sql("SELECT count(*) FROM information_schema.tables WHERE table_schema='public'"),'0');
  docker('run','-d','--name',api,'--network',network,'-p','127.0.0.1::10000','-v',path.join(root,'infra')+':/app/infra:ro','-e','PORT=10000','-e','API_PORT=3999','-e','DATABASE_URL='+url,'-e','CORS_ORIGINS=https://admin.example.test','-e','TRUST_PROXY_HOPS=1',image);
  const binding=docker('port',api,'10000/tcp').split('\n')[0];base='http://'+binding;
@@ -31,11 +31,11 @@ async function cli(args,env=[]){return docker('exec',...env.flatMap(([key,value]
  checks.push('admin/legal pages and assets served; admin uses relative production API');
  phase='migration';
  const migration=['infra/render-database.cjs','migrate','db',database,'APPROVE'];
- await cli(migration);assert.equal(sql('SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL'),'14');
+ await cli(migration);assert.equal(sql('SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL'),'15');
  await cli(['infra/render-database.cjs','status','db',database]);
- await cli(migration);assert.equal(sql('SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL'),'14');
+ await cli(migration);assert.equal(sql('SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL'),'15');
  assert.equal(sql('SELECT count(*) FROM "User"'),'0');assert.equal(sql('SELECT count(*) FROM "HistoricalPlacement"'),'0');
- checks.push('14 explicit isolated migrations; second deploy idempotent; no default account or historical seed');
+ checks.push('15 explicit isolated migrations; second deploy idempotent; no default account or historical seed');
  phase='empty API';
  for(const route of ['/announcements','/announcements/archive','/announcements?view=all','/historical/placements','/historical/placements?educationLevel=BACHELOR','/historical/placements?educationLevel=ASSOCIATE','/historical/placements?educationLevel=HIGH_SCHOOL']){const response=await request('/api/v1'+route);assert.equal(response.status,200,route);const body=await response.json();assert.equal(body.total,0);assert.deepEqual(body.items,[]);}
  const rounds=await request('/api/v1/historical/rounds');assert.deepEqual(await rounds.json(),[]);

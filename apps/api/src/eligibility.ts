@@ -7,6 +7,9 @@ export function evaluate(profile: Profile, requirements: Requirements, verified:
   const add = (field: string, outcome: Outcome, reason: string) => reasons.push({field, outcome, reason});
   if (!verified) add('source', 'UNKNOWN', 'Kadro koşulları kaynaktan doğrulanmamış.');
   if (requirements.complete !== true) add('coverage', 'UNKNOWN', 'Tüm başvuru koşullarının kayda alındığı doğrulanmamış.');
+  const expectedLevel=({P3:'LISANS',P93:'ONLISANS',P94:'ORTAOGRETIM'} as Record<string,string>)[requirements.kpssScoreType||''];
+  const conflictingLevel=!!(expectedLevel&&requirements.educationLevels?.length&&requirements.educationLevels.some(level=>level!==expectedLevel));
+  if(conflictingLevel)add('source','UNKNOWN','KPSS puan türü ile eğitim düzeyi koşulları çelişiyor; kaynak yeniden doğrulanmalı.');
   const oneOf = (field: keyof Profile, allowed: (string | number)[] | undefined) => {
     if (!allowed?.length) return;
     const actual = profile[field];
@@ -30,8 +33,8 @@ export function evaluate(profile: Profile, requirements: Requirements, verified:
   }
   minimum('ydsScore', requirements.ydsMinimumScore);
   for (const certificate of requirements.certificates ?? []) add('certificate', profile.certificates?.includes(certificate) ? 'ELIGIBLE' : 'UNKNOWN', profile.certificates?.includes(certificate) ? `${certificate}: kullanıcı beyanı mevcut; belge aslı kurumca kontrol edilir.` : `${certificate}: belge bilgisi eksik; yokluğu kesinleştirilemez.`);
-  for (const condition of requirements.otherConditions ?? []) add('other', 'UNKNOWN', `${condition}: insan doğrulaması gerekli.`);
+    if(requirements.otherConditions?.length) add('other','UNKNOWN','Resmî ilanda ek koşullar bulunuyor; asıl kaynak üzerinden insan doğrulaması gerekli.');
   // Unverified data must never produce a definitive positive or negative decision.
-  const outcome: Outcome = !verified ? 'UNKNOWN' : reasons.some(r => r.outcome === 'INELIGIBLE') ? 'INELIGIBLE' : reasons.some(r => r.outcome === 'UNKNOWN') ? 'UNKNOWN' : 'ELIGIBLE';
+  const outcome: Outcome = !verified || conflictingLevel ? 'UNKNOWN' : reasons.some(r => r.outcome === 'INELIGIBLE') ? 'INELIGIBLE' : reasons.some(r => r.outcome === 'UNKNOWN') ? 'UNKNOWN' : 'ELIGIBLE';
   return {outcome, reasons, disclaimer: 'Sonuç bilgilendirme amaçlıdır. Resmî metni ve kurumun kararını esas alın.'};
 }

@@ -40,7 +40,9 @@ function url(value: unknown, source = false): string {
 function fields(input: any, gazette?:any) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequestException();
   const result: any = {};
-  for (const key of ['title', 'organization', 'city', 'positionTitle', 'educationLevel', 'summary', 'requirements']) {
+  // Explicit null clears obsolete dates/links when a reviewed correction removes them.
+  Object.assign(result,{applicationStartAt:null,applicationEndAt:null,applicationUrl:null});
+  for (const key of ['title', 'organization', 'city', 'district', 'positionTitle', 'educationLevel', 'summary', 'requirements']) {
     if (input[key] != null) {
       if (typeof input[key] !== 'string' || input[key].length > 20000) throw new BadRequestException(key);
       result[key] = input[key].trim();
@@ -60,14 +62,16 @@ function fields(input: any, gazette?:any) {
       }
       if(!original || typeof position.title!=='string' || !position.title.trim() || position.title.length>500 || !Number.isInteger(position.quota) || position.quota<1 || !position.requirements || typeof position.requirements!=='object' || Array.isArray(position.requirements))throw new BadRequestException('Invalid PDF position');
       const r=position.requirements;
-      const allowed=['complete','educationLevels','degreeCodes','degreeCodesVerified','kpssRequired','kpssScoreType','kpssMinimumScore','examYears','ydsMinimumScore','certificates','otherConditions'];
+      const allowed=['complete','educationLevels','degreeCodes','degreeCodesVerified','kpssRequired','kpssScoreType','kpssMinimumScore','examYears','ydsMinimumScore','certificates','otherConditions','employmentType'];
+      if(r.employmentType!==undefined&&!['CIVIL_SERVANT','CONTRACTED','WORKER','ACADEMIC'].includes(r.employmentType))throw new BadRequestException('employmentType');
       if(Object.keys(r).some(key=>!allowed.includes(key)))throw new BadRequestException('Unknown PDF criterion');
       for(const key of ['complete','degreeCodesVerified','kpssRequired'])if(r[key]!==undefined && typeof r[key]!=='boolean')throw new BadRequestException(key);
       for(const key of ['educationLevels','degreeCodes','certificates','otherConditions'])if(r[key]!==undefined && (!Array.isArray(r[key])||r[key].length>100||r[key].some((v:any)=>typeof v!=='string'||v.length>20000)))throw new BadRequestException(key);
       for(const key of ['kpssMinimumScore','ydsMinimumScore'])if(r[key]!==undefined && (typeof r[key]!=='number'||!Number.isFinite(r[key])||r[key]<0||r[key]>100))throw new BadRequestException(key);
       if(r.kpssScoreType!==undefined && (typeof r.kpssScoreType!=='string'||r.kpssScoreType.length>50))throw new BadRequestException();
       if(r.examYears!==undefined && (!Array.isArray(r.examYears)||r.examYears.length>20||r.examYears.some((v:any)=>!Number.isInteger(v)||v<2000||v>2100)))throw new BadRequestException();
-      return {title:position.title,quota:position.quota,requirements:r,parserPositionKey:original.parserPositionKey,sourceEvidence:original.sourceEvidence};
+      if(position.city!=null&&(typeof position.city!=='string'||position.city.length>100))throw new BadRequestException('Position city');
+      return {title:position.title,city:position.city?.trim()||null,quota:position.quota,requirements:r,parserPositionKey:original.parserPositionKey,sourceEvidence:original.sourceEvidence};
     });
     if(new Set(result.positions.map((p:any)=>p.parserPositionKey)).size!==result.positions.length)throw new BadRequestException('Duplicate PDF position identity');
     result.positionsReviewed=input.positionsReviewed===true;
@@ -78,7 +82,7 @@ function fields(input: any, gazette?:any) {
     result.quota = input.quota;
   }
   if(gazette && result.positions.length && result.quota!==result.positions.reduce((sum:number,p:any)=>sum+p.quota,0))throw new BadRequestException('PDF quota must equal reviewed position rows');
-  for (const key of ['applicationStartAt', 'applicationEndAt']) {
+  for (const key of ['applicationStartAt', 'applicationEndAt', 'announcedAt']) {
     if (input[key]) {
       if (typeof input[key] !== 'string' || !/(Z|[+-]\d\d:\d\d)$/.test(input[key]) || !Number.isFinite(Date.parse(input[key]))) throw new BadRequestException('Explicit timezone required');
       result[key] = new Date(input[key]).toISOString();
@@ -113,6 +117,15 @@ export class AnnouncementAdminController {
       await tx.announcementReviewAudit.create({data:{rowId:id,actor,action:'DRAFT_EDITED',snapshot:parsed}});return {id,status:'PENDING_REVIEW'};
     },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
   }
+  @Get(':id/matches')
+  async matches(@Req() req:any,@Param('id') id:string){
+    await this.actor(req,['SYSTEM_ADMIN','REVIEWER','CONTENT_EDITOR']);
+    const row=await this.db.announcementImportRow.findUnique({where:{id}});if(!row)throw new BadRequestException('Source row not found');
+    const {sameOfficialNotice}=await import('./announcement-identity');
+    const candidates=await this.db.announcementImportRow.findMany({where:{id:{not:id}},orderBy:{updatedAt:'desc'},take:500});
+    const matches=candidates.flatMap(other=>{const reason=sameOfficialNotice(row,other);if(!reason)return [];const a=row.parsed as any,b=other.parsed as any;return [{rowId:other.id,announcementId:other.announcementId,sourceUrl:other.sourceUrl,reason,conflicts:['applicationStartAt','applicationEndAt','quota'].filter(key=>a[key]!=null&&b[key]!=null&&a[key]!==b[key]),reviewRequired:true}];});
+    return {matches,automaticMerge:false,searchLimit:500};
+  }
   @Post(':id/link')
   async link(@Req() req:any,@Param('id') id:string,@Body() body:any){
     const actor=await this.actor(req,['SYSTEM_ADMIN','REVIEWER'],true);
@@ -134,6 +147,29 @@ export class AnnouncementAdminController {
   async ingest(@Req() req:any, @Body() body: any) {
     const actor = await this.actor(req, ['SYSTEM_ADMIN', 'CONTENT_EDITOR'],true);
     return this.stageRecords(body,actor);
+  }
+  @Post(':id/apply-event')
+  async applyEvent(@Req() req:any,@Param('id') id:string,@Body() body:any){
+    const actor=await this.actor(req,['SYSTEM_ADMIN','REVIEWER'],true);
+    if(!Number.isInteger(body?.version)||!['EXTEND','WITHDRAW'].includes(body.action)||typeof body.announcementId!=='string'||body.documentVerified!==true||typeof body.evidence!=='string'||body.evidence.trim().length<20)throw new BadRequestException('Explicit existing-announcement event review required');
+    return this.db.$transaction(async tx=>{
+      const row=await tx.announcementImportRow.findUnique({where:{id}});const original=row?.raw as any;
+      if(!row||row.version!==body.version||row.status==='EVENT_APPLIED'||row.announcementId)throw new ConflictException('Refresh event source');
+      if(!row.sourceDocumentId||!['CANCELLATION','CORRECTION'].includes(original.eventType)||(body.action==='WITHDRAW'&&original.eventType!=='CANCELLATION')||(body.action==='EXTEND'&&original.eventType!=='CORRECTION'))throw new BadRequestException('Event must match the reviewed source notice');
+      const announcement=await tx.announcement.findFirst({where:{id:body.announcementId,status:{in:['PUBLISHED','ARCHIVED']},publishedAt:{not:null},sourceCheckedAt:{not:null}}});
+      if(!announcement)throw new BadRequestException('Verified existing announcement required');
+      let end:Date|undefined;
+      if(body.action==='EXTEND'){
+        if(typeof body.applicationEndAt!=='string'||!/(Z|[+-]\d\d:\d\d)$/.test(body.applicationEndAt)||!Number.isFinite(Date.parse(body.applicationEndAt)))throw new BadRequestException('Explicit verified deadline and timezone required');
+        end=new Date(body.applicationEndAt);if(!announcement.applicationEndAt||end<=announcement.applicationEndAt)throw new BadRequestException('Extension must increase a known deadline');
+      }
+      const previous=await tx.announcementSourceReference.findUnique({where:{importRowId:id}});if(previous&&previous.announcementId!==announcement.id)throw new ConflictException('Source linked to another announcement');
+      await tx.announcementSourceReference.upsert({where:{importRowId:id},create:{importRowId:id,announcementId:announcement.id,evidence:original.sourceEvidence},update:{}});
+      await tx.announcement.update({where:{id:announcement.id},data:{status:body.action==='WITHDRAW'?'WITHDRAWN':'PUBLISHED',sourceCheckedAt:new Date(),...(end?{applicationEndAt:end}:{})}});
+      const updated=await tx.announcementImportRow.updateMany({where:{id,version:body.version},data:{status:'EVENT_APPLIED',version:{increment:1}}});if(!updated.count)throw new ConflictException();
+      await tx.announcementReviewAudit.create({data:{rowId:id,actor,action:body.action,snapshot:{announcementId:announcement.id,evidence:body.evidence,previousEndAt:announcement.applicationEndAt?.toISOString()??null,applicationEndAt:end?.toISOString()??null,sourceEvidence:original.sourceEvidence}}});
+      return {status:'EVENT_APPLIED',announcementId:announcement.id};
+    },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
   }
   // Internal scheduler entry point. It can stage only; review/publication still require a user.
   async stageRecords(body:any,actor:string){
@@ -189,9 +225,11 @@ export class AnnouncementAdminController {
         announcementId = announcement.id;
         if(original){
           if(!positionsReviewed)throw new BadRequestException('PDF position review required');
+          const currentIds=positions.map((position:any)=>createHash('sha256').update(`gazette-position:${announcementId}:${position.parserPositionKey}`).digest('hex'));
+          await tx.announcementPosition.deleteMany({where:{announcementId,id:{notIn:currentIds}}});
           for(const position of positions){
             const id=createHash('sha256').update(`gazette-position:${announcementId}:${position.parserPositionKey}`).digest('hex');
-            const positionData={announcementId,title:position.title,quota:position.quota,requirements:position.requirements,sourceUrl:parsed.sourceUrl,sourceEvidence:{...position.sourceEvidence,pdfSha256:original.sourceEvidence.pdfSha256},verifiedAt:row.updatedAt};
+            const positionData={announcementId,title:position.title,city:position.city,quota:position.quota,requirements:position.requirements,sourceUrl:parsed.sourceUrl,sourceEvidence:{...position.sourceEvidence,pdfSha256:original.sourceEvidence.pdfSha256,documentSha256:original.sourceEvidence.documentSha256??original.sourceEvidence.pdfSha256},verifiedAt:row.updatedAt};
             await tx.announcementPosition.upsert({where:{id},create:{id,...positionData},update:positionData});
           }
         }

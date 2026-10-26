@@ -9,4 +9,5 @@ assert.equal(notificationPlan(p,[{...a,status:'WITHDRAWN'}],[],now).length,0);
 assert.equal(notificationPlan(p,[{...a,positions:[{verifiedAt:null,requirements:{complete:true,kpssRequired:false}}]}],[],now).length,0);
 assert.equal(notificationPlan(p,[],[{createdAt:new Date(Date.now()-1000),announcement:{...a,status:'WITHDRAWN',updatedAt:now}}],now)[0].kind,'WITHDRAWN');
 assert.equal(notificationPlan(p,[],[{createdAt:new Date(Date.now()-1000),lastKnownEndAt:new Date(now.getTime()-1000),announcement:{...a,updatedAt:now}}],now)[0].kind,'EXTENDED');
+assert.equal(notificationPlan(p,[],[{createdAt:new Date(Date.now()-1000),announcement:{...a,sourceCheckedAt:null,updatedAt:now}}],now).length,0);
 console.log('PASS: 8 consent, matching uncertainty, deadline, extension and withdrawal notification checks');

@@ -1,0 +1,28 @@
+const assert=require('node:assert/strict');require('reflect-metadata');
+if(!process.env.DATABASE_URL?.includes('/kadroradar_ingestion_test_'))throw Error('Disposable DB required');
+const {PrismaClient}=require('@prisma/client'),{SourceOperations}=require('./dist/source-operations'),{scanIntervalHours}=require('./dist/announcement-scan'),registry=require('../../packages/official-sources.json');
+(async()=>{const db=new PrismaClient(),ops=new SourceOperations(db,{}),original={...registry.energy},previous=process.env.ANNOUNCEMENT_SCAN_INTERVAL_HOURS;let now=new Date('2026-01-01T00:00:00Z'),calls=0;
+const context={mode:'scheduled',now:()=>new Date(now)},row={title:'SYNTHETIC interval notice',organization:'SYNTHETIC interval fixture',sourceUrl:'https://enerji.gov.tr/interval-only-test'},adapter=async()=>{calls++;return [row]};
+const advance=hours=>{now=new Date(now.getTime()+hours*3600000)};
+try{
+ delete process.env.ANNOUNCEMENT_SCAN_INTERVAL_HOURS;assert.equal(scanIntervalHours(),96);for(const v of ['0','-1','1.5','bad','8761'])assert.throws(()=>scanIntervalHours(v));
+ await assert.rejects(()=>ops.run('energy',adapter,context));assert.equal(calls,0);
+ Object.assign(registry.energy,{enabled:true});await db.sourceSyncState.deleteMany({where:{id:'energy'}});
+ assert.equal((await ops.run('energy',adapter,context)).created,1);advance(95);assert.equal((await ops.run('energy',adapter,context)).status,'NOT_DUE');assert.equal(calls,1);
+ advance(1);assert.equal((await ops.run('energy',adapter,context)).duplicate,1);assert.equal(calls,2);assert.equal(await db.announcementImportRow.count({where:{sourceUrl:row.sourceUrl}}),1);
+ assert.equal((await db.announcementImportRow.findUnique({where:{sourceUrl:row.sourceUrl}})).status,'PENDING_REVIEW');
+ advance(48);process.env.ANNOUNCEMENT_SCAN_INTERVAL_HOURS='48';assert.equal((await ops.run('energy',adapter,{...context,mode:'manual'})).status,'OK');
+ const state=await db.sourceSyncState.findUnique({where:{id:'energy'}});assert.equal(state.metrics.lastReceipt.mode,'manual');assert.equal(state.metrics.lastReceipt.provenance,'SYNTHETIC_ADAPTER');
+ advance(48);let release,started;const wait=new Promise(r=>release=r),ready=new Promise(r=>started=r);const running=ops.run('energy',async()=>{started();await wait;return []},context);await ready;
+ assert.equal((await ops.run('energy',adapter,context)).status,'BUSY');release();assert.equal((await running).created,0);
+ advance(48);const before=await db.sourceSyncState.findUnique({where:{id:'energy'}});assert.equal((await ops.run('energy',async()=>{throw Error('RATE_LIMITED')},context)).status,'ERROR');
+ const failed=await db.sourceSyncState.findUnique({where:{id:'energy'}});assert.equal(failed.lastSuccessAt.toISOString(),before.lastSuccessAt.toISOString());assert.equal(failed.metrics.lastFailure.errorCode,'RATE_LIMITED');assert.equal((await ops.run('energy',adapter,context)).status,'BACKOFF');
+ advance(1);const unresolved={title:'SYNTHETIC linkless notice',publishable:false,issue:'MISSING_OFFICIAL_DETAIL_URL',rawSourceReference:{feedUrl:registry.energy.feed,itemOrdinal:1}};
+ const report=await ops.run('energy',async()=>({rows:[],unresolved:[unresolved],documentSha256:'c'.repeat(64),itemCount:1,downloaded:false}),context);assert.equal(report.status,'OK');
+ const review=await db.sourceDocument.findUnique({where:{sha256:'c'.repeat(64)}});assert.equal(review.state,'OFFICIAL_FEED_REVIEW');assert.equal(review.gazetteEvidence.liveFetch,false);assert.equal(review.gazetteEvidence.unresolved.length,1);
+ assert.equal(await db.announcement.count({where:{sourceUrl:row.sourceUrl}}),0);
+ process.env.ANNOUNCEMENT_SCAN_INTERVAL_HOURS='96';advance(96);const fresh={...row,title:'SYNTHETIC newly discovered after 4 days',sourceUrl:row.sourceUrl+'-new'};assert.equal((await ops.run('energy',async()=>[row,fresh],context)).created,1);
+ assert.equal(await db.announcementImportRow.count({where:{sourceUrl:fresh.sourceUrl,status:'PENDING_REVIEW'}}),1);
+ const other=await db.sourceSyncState.findUnique({where:{id:'sbb'}});assert.equal(other,null);
+ console.log('PASS: 96h/48h durable due times, interval reduction, manual/scheduled receipt, no-change duplicate, new notice after four days, closed source, lock across workers, 429 backoff, unresolved source review; synthetic clock/adapter, no live automation');
+}finally{Object.assign(registry.energy,original);if(previous===undefined)delete process.env.ANNOUNCEMENT_SCAN_INTERVAL_HOURS;else process.env.ANNOUNCEMENT_SCAN_INTERVAL_HOURS=previous;ops.onModuleDestroy();await db.$disconnect();}})().catch(e=>{console.error(e);process.exitCode=1;});

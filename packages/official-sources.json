@@ -9,7 +9,17 @@
     "format": "rss",
     "enabled": false,
     "automationPermission": "RSS_READING_ONLY",
-    "republicationPermission": "UNVERIFIED"
+    "republicationPermission": "UNVERIFIED",
+    "indexingPolicy": {
+      "automatedAccess": "ALLOWED",
+      "scope": "ADVERTISED_RSS_FEED_ONLY",
+      "basisUrl": "https://enerji.gov.tr/rss",
+      "minIntervalSeconds": 3600,
+      "contentUse": "FACTS_AND_OFFICIAL_LINKS_ONLY",
+      "fullDocumentPublication": "DISABLED",
+      "robotsUrl": "https://enerji.gov.tr/robots.txt",
+      "assessmentNote": "Advertised RSS reading only; robots wildcard allows this feed path. Full document redistribution is outside scope."
+    }
   },
   "sbb": {
     "id": "sbb",
@@ -21,7 +31,15 @@
     "format": "html",
     "enabled": false,
     "automationPermission": "UNVERIFIED",
-    "republicationPermission": "UNVERIFIED"
+    "republicationPermission": "UNVERIFIED",
+    "indexingPolicy": {
+      "automatedAccess": "REVIEW_REQUIRED",
+      "scope": "NOT_ASSESSED",
+      "basisUrl": "https://kamuilan.sbb.gov.tr/",
+      "minIntervalSeconds": 3600,
+      "contentUse": "FACTS_AND_OFFICIAL_LINKS_ONLY",
+      "fullDocumentPublication": "DISABLED"
+    }
   },
   "career": {
     "id": "career",
@@ -33,19 +51,36 @@
     "format": "html",
     "enabled": false,
     "automationPermission": "UNVERIFIED",
-    "republicationPermission": "UNVERIFIED"
+    "republicationPermission": "UNVERIFIED",
+    "indexingPolicy": {
+      "automatedAccess": "REVIEW_REQUIRED",
+      "scope": "NOT_ASSESSED",
+      "basisUrl": "https://kariyerkapisi.gov.tr/isealim",
+      "minIntervalSeconds": 3600,
+      "contentUse": "FACTS_AND_OFFICIAL_LINKS_ONLY",
+      "fullDocumentPublication": "DISABLED"
+    }
   },
   "iskur": {
     "id": "iskur",
     "organization": "İŞKUR",
     "hosts": [
-      "esube.iskur.gov.tr"
+      "esube.iskur.gov.tr",
+      "www.iskur.gov.tr"
     ],
     "feed": "https://esube.iskur.gov.tr/",
     "format": "html",
     "enabled": false,
     "automationPermission": "UNVERIFIED",
-    "republicationPermission": "UNVERIFIED"
+    "republicationPermission": "UNVERIFIED",
+    "indexingPolicy": {
+      "automatedAccess": "REVIEW_REQUIRED",
+      "scope": "NOT_ASSESSED",
+      "basisUrl": "https://esube.iskur.gov.tr/",
+      "minIntervalSeconds": 3600,
+      "contentUse": "FACTS_AND_OFFICIAL_LINKS_ONLY",
+      "fullDocumentPublication": "DISABLED"
+    }
   },
   "ilan": {
     "id": "ilan",
@@ -57,7 +92,15 @@
     "format": "html",
     "enabled": false,
     "automationPermission": "UNVERIFIED",
-    "republicationPermission": "UNVERIFIED"
+    "republicationPermission": "UNVERIFIED",
+    "indexingPolicy": {
+      "automatedAccess": "REVIEW_REQUIRED",
+      "scope": "NOT_ASSESSED",
+      "basisUrl": "https://www.ilan.gov.tr/",
+      "minIntervalSeconds": 3600,
+      "contentUse": "FACTS_AND_OFFICIAL_LINKS_ONLY",
+      "fullDocumentPublication": "DISABLED"
+    }
   },
   "gazette": {
     "id": "gazette",
@@ -69,7 +112,15 @@
     "format": "html",
     "enabled": false,
     "automationPermission": "UNVERIFIED",
-    "republicationPermission": "UNVERIFIED"
+    "republicationPermission": "UNVERIFIED",
+    "indexingPolicy": {
+      "automatedAccess": "REVIEW_REQUIRED",
+      "scope": "NOT_ASSESSED",
+      "basisUrl": "https://www.resmigazete.gov.tr/",
+      "minIntervalSeconds": 3600,
+      "contentUse": "FACTS_AND_OFFICIAL_LINKS_ONLY",
+      "fullDocumentPublication": "DISABLED"
+    }
   },
   "uab": {
     "id": "uab",
@@ -81,7 +132,15 @@
     "format": "html",
     "enabled": false,
     "automationPermission": "UNVERIFIED",
-    "republicationPermission": "UNVERIFIED"
+    "republicationPermission": "UNVERIFIED",
+    "indexingPolicy": {
+      "automatedAccess": "REVIEW_REQUIRED",
+      "scope": "NOT_ASSESSED",
+      "basisUrl": "https://www.uab.gov.tr/duyurular/",
+      "minIntervalSeconds": 3600,
+      "contentUse": "FACTS_AND_OFFICIAL_LINKS_ONLY",
+      "fullDocumentPublication": "DISABLED"
+    }
   },
   "osym": {
     "id": "osym",
@@ -95,6 +154,14 @@
     "format": "historical-pdf",
     "enabled": false,
     "automationPermission": "UNVERIFIED",
-    "republicationPermission": "UNVERIFIED"
+    "republicationPermission": "UNVERIFIED",
+    "indexingPolicy": {
+      "automatedAccess": "REVIEW_REQUIRED",
+      "scope": "NOT_ASSESSED",
+      "basisUrl": "https://www.osym.gov.tr/",
+      "minIntervalSeconds": 3600,
+      "contentUse": "FACTS_AND_OFFICIAL_LINKS_ONLY",
+      "fullDocumentPublication": "DISABLED"
+    }
   }
 }

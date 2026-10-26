@@ -18,10 +18,22 @@ const {PrismaClient}=require('@prisma/client');const {NotificationService}=requi
   await db.candidateNotification.update({where:{id:oldTicket.id},data:{updatedAt:new Date(Date.now()-16*60000)}});
   global.fetch=async()=>({ok:true,json:async()=>({data:{[oldTicket.ticketId]:{status:'error',details:{error:'DeviceNotRegistered'}}}})});
   await service.tick();assert.equal((await db.candidateProfile.findUnique({where:{userId:user.id}})).pushToken,'ExpoPushToken[rotated_synthetic_fixture]');
+  // Regression: planning must not consume the old deadline before sending EXTENDED.
+  await db.candidateNotification.deleteMany({where:{userId:user.id}});
+  await db.announcementPosition.updateMany({where:{announcementId:announcement.id},data:{requirements:{complete:false,kpssRequired:false}}});
+  await db.savedAnnouncement.create({data:{userId:user.id,announcementId:announcement.id,lastKnownEndAt:new Date(Date.now()-86400000),createdAt:new Date(Date.now()-1000)}});
+  await db.announcement.update({where:{id:announcement.id},data:{applicationEndAt:new Date(Date.now()+7*86400000),sourceCheckedAt:null}});
+  let extensions=0;global.fetch=async()=>{extensions++;return {ok:true,json:async()=>({data:{status:'ok',id:'synthetic-extension-ticket'}})}};
+  await service.tick();assert.equal(extensions,0);
+  await db.announcement.update({where:{id:announcement.id},data:{sourceCheckedAt:new Date()}});
+  const second=new NotificationService();try{await Promise.all([service.tick(),second.tick()]);}finally{await second.onModuleDestroy();}
+  assert.equal(extensions,1);assert.equal((await db.candidateNotification.findFirst({where:{userId:user.id,kind:'EXTENDED'}})).status,'ACCEPTED');
+  assert.ok((await db.savedAnnouncement.findUnique({where:{userId_announcementId:{userId:user.id,announcementId:announcement.id}}})).lastKnownEndAt>Date.now());
+  await service.tick();assert.equal(extensions,1);
   console.log('PASS: mocked Expo send, durable dedup, daily cap, receipt failure, invalid device revocation; no real push sent');
  }finally{
   global.fetch=original;
-  if(user){await db.candidateNotification.deleteMany({where:{userId:user.id}});await db.candidateProfile.deleteMany({where:{userId:user.id}});await db.user.delete({where:{id:user.id}});}
+  if(user){await db.candidateNotification.deleteMany({where:{userId:user.id}});await db.savedAnnouncement.deleteMany({where:{userId:user.id}});await db.candidateProfile.deleteMany({where:{userId:user.id}});await db.user.delete({where:{id:user.id}});}
   if(announcement)await db.announcement.delete({where:{id:announcement.id}});
   await service.onModuleDestroy();await db.$disconnect();
  }

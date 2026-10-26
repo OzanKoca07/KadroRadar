@@ -14,6 +14,7 @@ model SourceDocument {
  sourceOrganization String
  state String @default("DRAFT")
  historicalEvidence Json?
+ gazetteEvidence Json?
  createdAt DateTime @default(now())
  placements HistoricalPlacement[]
  gazetteImports AnnouncementImportRow[]

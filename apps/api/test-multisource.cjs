@@ -1,0 +1,40 @@
+const assert=require('node:assert/strict'),{randomBytes,createHash}=require('node:crypto'),fs=require('node:fs/promises'),path=require('node:path');require('reflect-metadata');
+if(!process.env.DATABASE_URL?.includes('/kadroradar_ingestion_test_'))throw Error('Disposable DB required');
+process.env.NODE_ENV='production';process.env.PROCESS_ROLE='api';process.env.SOURCE_SYNC_ENABLED='false';process.env.NOTIFICATIONS_ENABLED='false';
+const {NestFactory}=require('@nestjs/core'),{PrismaClient}=require('@prisma/client'),{AppModule}=require('./dist/module'),{passwordHash}=require('./dist/password');
+(async()=>{const db=new PrismaClient(),suffix=randomBytes(6).toString('hex');process.env.GAZETTE_STORAGE_DIR=path.resolve(__dirname,'../../.local/multisource-tests',suffix);const app=await NestFactory.create(AppModule,{logger:false});app.setGlobalPrefix('api/v1');await app.listen(0,'127.0.0.1');const base=await app.getUrl()+'/api/v1';let token;
+async function req(route,body,status=200,method=body?'POST':'GET'){const r=await fetch(base+route,{method,headers:{'content-type':'application/json','x-client-platform':'mobile',...(token?{authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined});const value=await r.json();assert.equal(r.status,status,JSON.stringify(value));return value;}
+async function upload(source,url,html,status=201){const form=new FormData();form.append('sourceUrl',url);form.append('file',new Blob([html],{type:'text/html'}),'official.html');const r=await fetch(base+'/admin/gazette-documents/source-reviews/'+source,{method:'POST',headers:token?{authorization:'Bearer '+token}:{},body:form});const value=await r.json();assert.equal(r.status,status,JSON.stringify(value));return value;}
+try{
+ await req('/admin/gazette-documents/source-reviews',undefined,401);
+ await req('/admin/source-operations/energy/run',{},401);
+ const password=randomBytes(24).toString('hex'),email='multi-'+suffix+'@example.test',user=await db.user.create({data:{email,passwordHash:await passwordHash(password),role:'CONTENT_EDITOR'}});token=(await req('/account/login',{email,password},201)).token;
+ await req('/admin/source-operations/energy/run',{},403);
+ const sourceUrl='https://kamuilan.sbb.gov.tr/fixture-'+suffix,html='<a href="/fixture-personnel">Personel alım ilanı SYNTHETIC</a><script>alert(1)</script>';
+ const stagedBefore=await db.announcementImportRow.count();const document=await upload('sbb',sourceUrl,html);assert.equal(document.report.adapter,'SbbPublicAnnouncementsAdapter');assert.equal(document.report.links.length,1);assert.equal(document.report.links[0].organization,null);assert.equal(document.report.liveFetch,false);assert.equal(document.announcementRowsCreated,0);
+ assert.equal((await upload('sbb',sourceUrl,html)).duplicate,true);assert.equal(await db.announcementImportRow.count(),stagedBefore);
+ await upload('sbb','https://evil.test/',html,400);await upload('career','https://kariyerkapisi.gov.tr/other',html,409);
+ const raw=await fetch(base+'/admin/gazette-documents/source-reviews/'+document.documentId+'/file',{headers:{authorization:'Bearer '+token}});assert.equal(raw.headers.get('content-type'),'application/octet-stream');assert.equal(await raw.text(),html);
+ const fullText='PRIVATE_FULL_SOURCE_TEXT_'+suffix,now=new Date(),common={summary:fullText,requirements:fullText,sourceEvidence:{text:fullText,dateSuggestions:[{text:fullText}],documentSha256:'a'.repeat(64)},organization:'SYNTHETIC multi '+suffix,status:'PUBLISHED',publishedAt:now,sourceCheckedAt:now,sourceUrl:'https://enerji.gov.tr/fixture-'+suffix,applicationStartAt:new Date(Date.now()-86400000),applicationEndAt:new Date(Date.now()+86400000)};
+ const worker=await db.announcement.create({data:{...common,title:'Synthetic worker',positions:{create:{title:'İşçi',quota:1,verifiedAt:now,requirements:{kpssRequired:false,employmentType:'WORKER',complete:false}}}}});
+ const unknown=await db.announcement.create({data:{...common,title:'Synthetic unknown',applicationStartAt:null,positions:{create:{title:'Belirsiz',quota:1,verifiedAt:now,requirements:{complete:false}}}}});
+ const upcoming=await db.announcement.create({data:{...common,title:'Synthetic upcoming',applicationStartAt:new Date(Date.now()+3600000)}});
+ const filter='&organization='+encodeURIComponent(common.organization);
+ const free=await req('/announcements?kpssRequired=false&employmentType=WORKER'+filter);assert.equal(free.total,1);assert.equal(free.items[0].id,worker.id);assert.equal(free.items[0].applicationStatus,'OPEN');
+ assert.ok(!JSON.stringify(free).includes(fullText));assert.ok(!JSON.stringify(await req('/announcements/'+worker.id)).includes(fullText));
+ await req('/account/saved/'+worker.id,{},200,'PUT');assert.ok(!JSON.stringify(await req('/account/saved')).includes(fullText));assert.equal((await db.announcement.findUnique({where:{id:worker.id}})).requirements,fullText);
+ assert.equal((await req('/announcements?view=upcoming'+filter)).items[0].id,upcoming.id);assert.equal((await req('/announcements?view=date-unverified'+filter)).items[0].id,unknown.id);
+ await req('/announcements?kpssRequired=false&kpssScore=75',undefined,400);await req('/announcements?employmentType=UNKNOWN',undefined,400);
+ const evidence={advertisementId:'SYNTHETIC-'+suffix,gazetteDate:'2026-10-26',pdfSha256:'a'.repeat(64),pageStart:1,pageEnd:2};
+ await req('/admin/announcement-imports',{rows:[{title:'Synthetic exact identity A',organization:common.organization,district:'SYNTHETIC District',announcedAt:'2026-10-26T09:00:00+03:00',sourceUrl:'https://enerji.gov.tr/identity-'+suffix,sourceEvidence:evidence,quota:1},{title:'Different title exact identity B',organization:common.organization,sourceUrl:'https://esube.iskur.gov.tr/identity-'+suffix,sourceEvidence:evidence,quota:2}]},201);
+ const rows=(await req('/admin/announcement-imports')).filter(r=>r.parsed.organization===common.organization);assert.equal(rows.length,2);
+ const dated=rows.find(r=>r.parsed.district==='SYNTHETIC District');assert.equal(dated.parsed.announcedAt,'2026-10-26T06:00:00.000Z');
+ const hints=await req('/admin/announcement-imports/'+rows[0].id+'/matches');assert.equal(hints.automaticMerge,false);assert.ok(hints.matches.some(m=>m.rowId===rows[1].id&&m.conflicts.includes('quota')));
+ await req('/admin/announcement-imports/'+rows[0].id+'/link',{version:rows[0].version,announcementId:worker.id,documentVerified:true,evidence:'SYNTHETIC isolated official identity comparison'},403);
+ await db.user.update({where:{id:user.id},data:{role:'REVIEWER'}});
+ await upload('sbb',sourceUrl,html,403);
+ await req('/admin/announcement-imports/'+rows[0].id+'/link',{version:rows[0].version,announcementId:worker.id,documentVerified:true,evidence:'SYNTHETIC isolated official identity comparison'},201);
+ assert.equal(await db.announcementSourceReference.count({where:{announcementId:worker.id}}),1);
+ assert.equal((await db.announcementImportRow.findUnique({where:{id:rows[0].id}})).status,'LINKED');
+ console.log('PASS: isolated manual adapters, source SHA dedup/conflict, safe download/RBAC, explicit KPSS-free and employment filters, upcoming/unknown dates, source identity conflict hints and audited manual linking; synthetic documents, no live collection');
+}finally{await app.close();await db.$disconnect();}})().catch(e=>{console.error(e);process.exitCode=1;});

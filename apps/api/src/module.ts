@@ -40,7 +40,7 @@ class ApiController {
   constructor(private readonly db: Db) {}
 
   @Get('health')
-  async health() {try{await this.db.$queryRaw`SELECT 1`;return {status:'ok',database:'ready'};}catch{throw new ServiceUnavailableException('Database unavailable');} }
+  async health() {try{await this.db.$queryRaw`SELECT 1`;const sha=process.env.RENDER_GIT_COMMIT;return {status:'ok',database:'ready',...(sha&&/^[a-f0-9]{40}$/.test(sha)?{release:{commit:sha}}:{})};}catch{throw new ServiceUnavailableException('Database unavailable');} }
 
   @Get('historical/rounds')
   rounds() {
@@ -63,15 +63,18 @@ class ApiController {
     @Query('educationLevel') educationLevel?: string,
     @Query('minScoreGte') minScoreGte?: string,
     @Query('minScoreLte') minScoreLte?: string,
+    @Query('positionCode') positionCode?: string,
   ) {
     const p = integerInRange(page, 1, 1, 100000);
     const l = integerInRange(limit, 20, 1, 100);
     const period: Prisma.PlacementRoundWhereInput = {};
     if (year && /^\d{4}$/.test(year)) period.year = Number(year);
     if (round && /^\d+$/.test(round)) period.sequenceNo = Number(round);
-    if (educationLevel?.trim()) period.educationLevel = educationLevel.trim();
+    if (educationLevel?.trim()) period.educationLevel = educationLevel.trim()==='SECONDARY'?'HIGH_SCHOOL':educationLevel.trim();
+    if(positionCode!==undefined&&!/^[123]\d{8}$/.test(positionCode))throw new BadRequestException('Invalid positionCode');
     const where: Prisma.HistoricalPlacementWhereInput = {
       approvedAt: { not: null },
+      ...(positionCode?{positionCode}:{}),
       ...(city?.trim() ? { city: { contains: city.trim(), mode: 'insensitive' } } : {}),
       ...(title?.trim() ? { title: { contains: title.trim(), mode: 'insensitive' } } : {}),
       ...(institution?.trim() ? { institutionRawName: { contains: institution.trim(), mode: 'insensitive' } } : {}),

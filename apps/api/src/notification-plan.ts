@@ -11,9 +11,10 @@ export function notificationPlan(profile: Profile & {notificationConsent?:boolea
   }
   for(const s of saved){
     const a=s.announcement;
+    if(!a.sourceCheckedAt||!a.publishedAt||new Date(a.publishedAt)>now)continue;
     const extended=a.sourceCheckedAt && s.lastKnownEndAt && a.applicationEndAt && new Date(a.applicationEndAt)>new Date(s.lastKnownEndAt);
     if(new Date(a.updatedAt)>new Date(s.createdAt))events.push({announcementId:a.id,eventKey:`CHANGE:${a.id}:${new Date(a.updatedAt).toISOString()}`,kind:a.status==='WITHDRAWN'?'WITHDRAWN':extended?'EXTENDED':'SAVED_CHANGE',title:a.status==='WITHDRAWN'?'Kaydettiğiniz ilan geri çekildi.':extended?'Kaydettiğiniz ilanın başvuru süresi uzatıldı.':'Kaydettiğiniz ilanın bilgileri değişti; resmî kaynağı kontrol edin.'});
-    if(a.status==='PUBLISHED' && a.applicationEndAt && new Date(a.applicationEndAt)>now && new Date(a.applicationEndAt).getTime()-now.getTime()<=86400000)events.push({announcementId:a.id,eventKey:`SAVED_DEADLINE:${a.id}:${new Date(a.applicationEndAt).toISOString()}`,kind:'SAVED_DEADLINE',title:'Kaydettiğiniz ilanın son başvuru günü yaklaşıyor.'});
+    if(a.status==='PUBLISHED' && a.applicationStartAt && new Date(a.applicationStartAt)<=now && a.applicationEndAt && new Date(a.applicationEndAt)>now && new Date(a.applicationEndAt).getTime()-now.getTime()<=86400000)events.push({announcementId:a.id,eventKey:`SAVED_DEADLINE:${a.id}:${new Date(a.applicationEndAt).toISOString()}`,kind:'SAVED_DEADLINE',title:'Kaydettiğiniz ilanın son başvuru günü yaklaşıyor.'});
   }
   return events;
 }

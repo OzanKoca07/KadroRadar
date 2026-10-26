@@ -11,4 +11,5 @@ assert.equal(evaluate(profile,{...criteria,complete:false},true).outcome,'UNKNOW
 assert.equal(evaluate(profile,{...criteria,certificates:['certificate']},true).outcome,'UNKNOWN');
 assert.equal(evaluate(profile,{...criteria,otherConditions:['human review']},true).outcome,'UNKNOWN');
 assert.equal(evaluate(profile,{complete:true},true).outcome,'UNKNOWN');
+assert.equal(evaluate({...profile,kpssScoreType:'P94'},{...criteria,kpssScoreType:'P94'},true).outcome,'UNKNOWN');
 console.log('PASS: 9 conservative eligibility checks');

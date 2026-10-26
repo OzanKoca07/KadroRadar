@@ -3,6 +3,9 @@ import { BadRequestException, Controller, Get, Injectable, Module, NotFoundExcep
 import { PrismaClient, Prisma } from '@prisma/client';
 import { AnnouncementAdminController, IngestionDb } from './announcement-admin';
 import {CandidateModule} from './candidate';
+import {positionFilters} from './announcement-filters';
+import {applicationStatus} from './announcement-status';
+import {publicAnnouncement} from './public-announcement';
 
 @Injectable()
 class AnnouncementsDb extends PrismaClient implements OnModuleDestroy {
@@ -18,13 +21,14 @@ const intParam = (value: string | undefined, fallback: number, max: number) => {
 };
 const clean = (value: string | undefined, max = 100) => (value || '').trim().slice(0, max);
 const publicFields = {
+  status:true,
   id: true, title: true, organization: true, city: true, district: true,
-  positionTitle: true, quota: true, educationLevel: true, summary: true,
-  requirements: true, sourceUrl: true, applicationUrl: true,
+  positionTitle: true, quota: true, educationLevel: true,
+  sourceUrl: true, applicationUrl: true,
   applicationStartAt: true, applicationEndAt: true, announcedAt: true,
-  sourceCheckedAt: true, publishedAt: true,
+  sourceCheckedAt: true, publishedAt: true,updatedAt:true,
   sourceEvidence:true,
-  sourceReferences:{select:{evidence:true}},
+  sourceReferences:{select:{evidence:true,importRow:{select:{sourceUrl:true}}}},
   positions: {select:{id:true,title:true,city:true,quota:true,requirements:true,sourceUrl:true,sourceEvidence:true,verifiedAt:true}},
 } as const;
 
@@ -57,6 +61,7 @@ class AnnouncementsController {
     @Query('q') q?: string,
     @Query('page') pageArg?: string,
     @Query('limit') limitArg?: string,
+    @Query() options:Record<string,string|undefined> = {},
   ) {
     const page = intParam(pageArg, 1, 100000);
     const limit = intParam(limitArg, 20, 50);
@@ -72,11 +77,15 @@ class AnnouncementsController {
       where.AND = [{ status: 'PUBLISHED' }, openOrFuture];
     } else if (view === 'archive') {
       where.AND = [{ OR: [{ status: 'ARCHIVED' }, closed] }];
+    } else if(view==='upcoming'){
+      where.AND=[{status:'PUBLISHED',applicationStartAt:{gt:now},applicationEndAt:{gte:now}}];
+    } else if(view==='date-unverified'){
+      where.AND=[{status:'PUBLISHED',OR:[{applicationStartAt:null},{applicationEndAt:null}]}];
     } else if (view !== 'all') {
-      throw new BadRequestException('view must be open, archive or all');
+      throw new BadRequestException('view must be open, upcoming, date-unverified, archive or all');
     }
     const c = clean(city), o = clean(organization), search = clean(q);
-    if (c) where.city = { contains: c, mode: 'insensitive' };
+    if (c) where.OR = [{city:{contains:c,mode:'insensitive'}},{positions:{some:{verifiedAt:{not:null},city:{contains:c,mode:'insensitive'}}}}];
     if (o) where.organization = { contains: o, mode: 'insensitive' };
     if (search) {
       const and = Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : [];
@@ -86,13 +95,15 @@ class AnnouncementsController {
         { positionTitle: { contains: search, mode: 'insensitive' } },
       ] }];
     }
+    const and=Array.isArray(where.AND)?where.AND:where.AND?[where.AND]:[];
+    where.AND=[...and,...positionFilters(options)];
     const [items, total] = await this.db.$transaction([
       this.db.announcement.findMany({ where, select: publicFields,
         orderBy: [{ announcedAt: 'desc' }, { createdAt: 'desc' }],
         skip: (page - 1) * limit, take: limit }),
       this.db.announcement.count({ where }),
     ]);
-    return { items, page, limit, pages: Math.ceil(total / limit), total };
+    return { items:items.map(item=>publicAnnouncement({...item,applicationStatus:applicationStatus(item,now)})), page, limit, pages: Math.ceil(total / limit), total };
   }
 
   @Get(':id')
@@ -102,7 +113,7 @@ class AnnouncementsController {
       select: publicFields,
     });
     if (!item) throw new NotFoundException('İlan bulunamadı');
-    return item;
+    return publicAnnouncement({...item,applicationStatus:applicationStatus(item)});
   }
 }
 

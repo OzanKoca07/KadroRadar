@@ -7,9 +7,40 @@ import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 from official_rss import classify_error, sync
-from official_rss import parse_feed, official_url
+from official_rss import parse_feed, parse_feed_report, official_url, check_robots
 
 class FeedTests(unittest.TestCase):
+    def test_robots_rules_and_html_challenge(self):
+        from unittest.mock import MagicMock
+        for content,allowed in [(b'User-agent: *\nAllow: /\nDisallow: /uploads',True),(b'User-agent: *\nDisallow: /RSS',False),(b'<html>CAPTCHA</html>',False)]:
+            response=MagicMock();response.__enter__.return_value=response;response.read.return_value=content
+            opener=MagicMock();opener.open.return_value=response
+            with patch('official_rss.validate_outbound_dns'),patch('urllib.request.build_opener',return_value=opener):
+                if allowed:self.assertEqual(check_robots()['status'],'ALLOWED')
+                else:
+                    with self.assertRaises(ValueError):check_robots()
+
+    def test_robots_http_errors_are_not_bypassed(self):
+        from unittest.mock import MagicMock
+        for code in [403,429,302]:
+            opener=MagicMock();opener.open.side_effect=urllib.error.HTTPError('https://enerji.gov.tr/robots.txt',code,'blocked',{},None)
+            with patch('official_rss.validate_outbound_dns'),patch('urllib.request.build_opener',return_value=opener):
+                with self.assertRaises(urllib.error.HTTPError):check_robots()
+                self.assertEqual(opener.open.call_count,1)
+    def test_linkless_source_is_quarantined_without_losing_other_items(self):
+        report = parse_feed_report('<rss><channel><item><title>Sözleşmeli Bilişim Personeli Giriş Sınavı İlanı</title><PublishStartDate>10/01/2026 8:00:00 AM</PublishStartDate></item><item><title>Personel alım ilanı</title><link>/real-detail</link></item></channel></rss>'.encode())
+        self.assertEqual(len(report['rows']), 1)
+        self.assertEqual(len(report['unresolved']), 1)
+        row = report['unresolved'][0]
+        self.assertFalse(row['publishable'])
+        self.assertNotIn('sourceUrl', row)
+        self.assertEqual(row['rawSourceReference']['documentSha256'], report['documentSha256'])
+        self.assertEqual(row['rawSourceReference']['itemOrdinal'], 1)
+        self.assertEqual(report['positionRows'], 0)
+
+    def test_title_without_result_keyword_still_excludes_winners(self):
+        self.assertEqual(parse_feed_report('<rss><channel><item><title>Personel alımı atanmaya hak kazananlar</title></item></channel></rss>'.encode())['unresolved'], [])
+
     def test_missing_link_never_becomes_feed_url(self):
         with self.assertRaises(ValueError):
             parse_feed('<rss><channel><item><title>Personel alım ilanı</title></item></channel></rss>'.encode())
@@ -30,7 +61,7 @@ class FeedTests(unittest.TestCase):
                     assert self_request.get_header('If-none-match') == 'fixture-etag'
                     assert self_request.get_header('If-modified-since') == state['lastModified']
                     raise urllib.error.HTTPError(request.full_url,304,'Not modified',{},None)
-            with patch('urllib.request.build_opener', return_value=Opener()), patch('official_rss.validate_outbound_dns'):
+            with patch('urllib.request.build_opener', return_value=Opener()), patch('official_rss.validate_outbound_dns'), patch('official_rss.check_robots',return_value={'status':'ALLOWED'}):
                 self.assertTrue(sync(output)['notModified'])
             self.assertEqual(json.loads(output.read_text()), state)
     def test_missing_dates_stay_unknown(self):

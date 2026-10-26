@@ -1,6 +1,15 @@
 name: CI
 on: [push, pull_request]
 jobs:
+  windows-private-directory:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        shell: [powershell, pwsh]
+    steps:
+      - uses: actions/checkout@v4
+      - run: .\infra\test-private-directory.ps1
+        shell: ${{ matrix.shell }}
   render-runtime:
     runs-on: ubuntu-latest
     steps:
@@ -31,6 +40,8 @@ jobs:
       - run: pip install -r services/ingest/requirements.txt
       - run: python -m unittest discover -s services/ingest/tests -v
       - run: python -m unittest discover -s services/ingest -p test_official_rss.py -v
+      - run: python -m unittest discover -s services/ingest -p test_source_adapters.py -v
+      - run: python -m unittest discover -s services/ingest -p test_source_probe.py -v
       - run: python -m unittest discover -s services/ingest -p test_manual_import.py -v
       - run: python -m unittest discover -s services/ingest -p test_official_gazette.py -v
       - run: python -m unittest discover -s services/ingest -p test_osym_web.py -v
@@ -52,7 +63,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 9.15.4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -62,10 +73,10 @@ jobs:
       - run: pnpm --filter @kadro/api build
       - run: pnpm --filter @kadro/api exec prisma migrate deploy
       - run: python -m pip install 'pymupdf==1.27.2.3'
-      - run: node test-eligibility.cjs && node test-notification-plan.cjs && node test-mobile-network.cjs && node test-candidate.cjs && node test-notification-worker.cjs && node test-ingestion.cjs && node test-gazette.cjs
+      - run: node test-eligibility.cjs && node test-notification-plan.cjs && node test-mobile-network.cjs && node test-historical-network.cjs && node test-candidate.cjs && node test-notification-worker.cjs && node test-ingestion.cjs && node test-gazette.cjs && node test-daily-announcements.cjs
         working-directory: apps/api
       - run: pnpm --filter @kadro/admin build
-      - run: node test-environment.cjs && node test-manual-file.cjs && node test-source-operations.cjs
+      - run: node test-environment.cjs && node test-manual-file.cjs && node test-indexing-policy.cjs && node test-source-operations.cjs && node test-announcement-scan.cjs && node test-announcement-contract.cjs && node test-announcement-network.cjs && node test-multisource.cjs && node test-source-worker-process.cjs
         working-directory: apps/api
       - run: node apps/api/test-auth-capacity.cjs
       - run: pnpm --filter @kadro/admin exec playwright install --with-deps chromium

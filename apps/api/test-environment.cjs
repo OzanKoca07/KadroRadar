@@ -1,7 +1,13 @@
 const assert=require('node:assert/strict');const {validateEnvironment}=require('./dist/environment');
 const valid={NODE_ENV:'production',DATABASE_URL:'postgresql://example:placeholder@database.example.test/kadro',CORS_ORIGINS:'https://admin.example.test',SOURCE_SYNC_ENABLED:'false'};
 validateEnvironment(valid);
+assert.throws(()=>validateEnvironment({...valid,PROCESS_ROLE:'unrestricted'}));
+const {runsWorker}=require('./dist/process-role');const originalRole=process.env.PROCESS_ROLE;
+for(const [role,source,push] of [['api',false,false],['source-worker',true,false],['push-worker',false,true],['combined',true,true]]){process.env.PROCESS_ROLE=role;assert.equal(runsWorker('source'),source);assert.equal(runsWorker('push'),push);}if(originalRole===undefined)delete process.env.PROCESS_ROLE;else process.env.PROCESS_ROLE=originalRole;
 assert.throws(()=>validateEnvironment({...valid,DOCUMENT_UPLOADS_ENABLED:'yes'}));
+assert.throws(()=>validateEnvironment({...valid,SOURCE_WORKER_ONCE:'yes'}));
+assert.throws(()=>validateEnvironment({...valid,ANNOUNCEMENT_SCAN_INTERVAL_HOURS:'0'}));
+assert.throws(()=>validateEnvironment({...valid,ANNOUNCEMENT_SCAN_MODE:'unrestricted'}));
 for(const edit of [{DATABASE_URL:''},{DATABASE_URL:'https://database.example.test'},{CORS_ORIGINS:'*'},{CORS_ORIGINS:'http://admin.example.test'},{CORS_ORIGINS:'https://admin.example.test/path'},{CORS_ORIGINS:'https://localhost'},{SOURCE_SYNC_ENABLED:'yes'},{TRUST_PROXY_HOPS:'2'},{ADMIN_REVIEW_TOKEN:'development-only'}])assert.throws(()=>validateEnvironment({...valid,...edit}));
 const config=require('../mobile/app.config.js');const base=require('../mobile/app.json').expo;
 const previous={...process.env};process.env.EAS_BUILD_PROFILE='production';delete process.env.EXPO_PUBLIC_API_URL;assert.throws(()=>config({config:base}));process.env.EXPO_PUBLIC_API_URL='http://example.test/api/v1';assert.throws(()=>config({config:base}));process.env.EXPO_PUBLIC_API_URL='https://api.example.test/api/v1';delete process.env.EXPO_PUBLIC_PRIVACY_URL;assert.throws(()=>config({config:base}));process.env.EXPO_PUBLIC_PRIVACY_URL='https://example.test/privacy';process.env.EXPO_PUBLIC_ACCOUNT_DELETION_URL='https://example.test/delete-account';process.env.EXPO_PUBLIC_SUPPORT_EMAIL='support@example.test';const mobile=config({config:base});assert.equal(mobile.android.package,'com.kadroradar.app');assert.equal(mobile.extra.eas.projectId,'44bbc3b8-3306-4b9a-91c6-74a2eb2e0877');const android=mobile.plugins.find(x=>Array.isArray(x)&&x[0]==='expo-build-properties')[1].android;assert.equal(android.targetSdkVersion,36);assert.equal(android.usesCleartextTraffic,false);assert.ok(mobile.android.blockedPermissions.includes('android.permission.RECORD_AUDIO'));process.env=previous;

@@ -101,7 +101,7 @@ export class CandidateController {
     return this.db.candidateProfile.upsert({where:{userId:user.id},create:{userId:user.id,...data},update:data});
   }
   @Get('saved')
-  async saved(@Req() req:any){const user=await this.auth.user(req);return this.db.savedAnnouncement.findMany({where:{userId:user.id},include:{announcement:true},orderBy:{announcement:{applicationEndAt:'asc'}},take:100});}
+  async saved(@Req() req:any){const user=await this.auth.user(req);const rows=await this.db.savedAnnouncement.findMany({where:{userId:user.id},include:{announcement:true},orderBy:{announcement:{applicationEndAt:'asc'}},take:100});const {publicAnnouncement}=await import('./public-announcement');return rows.map(row=>({...row,announcement:publicAnnouncement(row.announcement)}));}
   @Put('saved/:id')
   async save(@Req() req:any,@Param('id') id:string){const user=await this.auth.user(req,true);const item=await this.db.announcement.findFirst({where:{id,status:{in:['PUBLISHED','ARCHIVED']},publishedAt:{lte:new Date()},sourceCheckedAt:{not:null}}});if(!item)throw new BadRequestException('Public announcement required');return this.db.savedAnnouncement.upsert({where:{userId_announcementId:{userId:user.id,announcementId:id}},create:{userId:user.id,announcementId:id,lastKnownEndAt:item.applicationEndAt},update:{}});}
   @Delete('saved/:id')
@@ -126,7 +126,8 @@ export class PositionController {
     let source:URL; try {source=new URL(body.sourceUrl);}catch{throw new BadRequestException('sourceUrl');}
     if(source.protocol!=='https:' || source.username || source.password || (source.port && source.port!=='443') || !Object.values(registry).some((s:any)=>s.hosts.includes(source.hostname))) throw new BadRequestException('sourceUrl');
     const r=body.requirements;
-    const allowed=['complete','educationLevels','degreeCodes','degreeCodesVerified','kpssRequired','kpssScoreType','kpssMinimumScore','examYears','ydsMinimumScore','certificates','otherConditions'];
+    const allowed=['complete','educationLevels','degreeCodes','degreeCodesVerified','kpssRequired','kpssScoreType','kpssMinimumScore','examYears','ydsMinimumScore','certificates','otherConditions','employmentType'];
+    if(r.employmentType!==undefined&&!['CIVIL_SERVANT','CONTRACTED','WORKER','ACADEMIC'].includes(r.employmentType))throw new BadRequestException('employmentType');
     if(Object.keys(r).some(key=>!allowed.includes(key)))throw new BadRequestException('Unknown criterion');
     for(const key of ['complete','degreeCodesVerified','kpssRequired'])if(r[key]!==undefined && typeof r[key]!=='boolean')throw new BadRequestException(key);
     for(const key of ['educationLevels','degreeCodes','certificates','otherConditions'])if(r[key]!==undefined && (!Array.isArray(r[key]) || r[key].length>100 || r[key].some((v:any)=>typeof v!=='string'|| !v || v.length>500)))throw new BadRequestException(key);

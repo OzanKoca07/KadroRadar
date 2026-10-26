@@ -2,10 +2,11 @@ import {Injectable,OnModuleDestroy,OnModuleInit} from '@nestjs/common';
 import {PrismaClient} from '@prisma/client';
 import {notificationPlan} from './notification-plan';
 import {createHash} from 'node:crypto';
+import {runsWorker} from './process-role';
 @Injectable()
 export class NotificationService implements OnModuleInit,OnModuleDestroy {
  private db=new PrismaClient();private timer?:NodeJS.Timeout;private running=false;
- onModuleInit(){if(process.env.NOTIFICATIONS_ENABLED==='true'){this.timer=setInterval(()=>{void this.tick().catch(()=>{console.error(JSON.stringify({event:'notification_tick_failed'}));});},15*60000);this.timer.unref();}}
+ onModuleInit(){if(process.env.NOTIFICATIONS_ENABLED==='true'&&runsWorker('push')){this.timer=setInterval(()=>{void this.tick().catch(()=>{console.error(JSON.stringify({event:'notification_tick_failed'}));});},15*60000);if(process.env.PROCESS_ROLE==='combined')this.timer.unref();}}
  async onModuleDestroy(){if(this.timer)clearInterval(this.timer);await this.db.$disconnect();}
  async plan(userId:string){
   return this.db.$transaction(async tx=>{
@@ -19,7 +20,6 @@ export class NotificationService implements OnModuleInit,OnModuleDestroy {
    for(const event of notificationPlan(profile,announcements,saved,now)){
     if(daily>=2 || weekly>=7)break;
     const result=await tx.candidateNotification.createMany({data:[{userId,...event}],skipDuplicates:true});
-    if(result.count && event.kind==='EXTENDED'){const record=saved.find(row=>row.announcementId===event.announcementId);if(record)await tx.savedAnnouncement.update({where:{userId_announcementId:{userId,announcementId:event.announcementId}},data:{lastKnownEndAt:record.announcement.applicationEndAt}});}
     queued+=result.count;daily+=result.count;weekly+=result.count;
    }
    return {queued};
@@ -46,6 +46,7 @@ export class NotificationService implements OnModuleInit,OnModuleDestroy {
       const response=await fetch('https://exp.host/--/api/v2/push/send',{method:'POST',headers:{'content-type':'application/json',...(process.env.EXPO_PUSH_ACCESS_TOKEN?{authorization:`Bearer ${process.env.EXPO_PUSH_ACCESS_TOKEN}`}:{})},body:JSON.stringify({to:current.pushToken,title:'KadroRadar',body:event.title,data:{announcementId:event.announcementId},sound:'default'}),signal:AbortSignal.timeout(15000)});
       const result:any=await response.json();const ticket=result.data;
       await this.db.candidateNotification.update({where:{id:event.id},data:{status:response.ok && ticket?.status==='ok'?'ACCEPTED':'FAILED',ticketId:ticket?.id??null}});
+      if(response.ok&&ticket?.status==='ok'&&event.kind==='EXTENDED')await this.db.savedAnnouncement.updateMany({where:{userId:p.userId,announcementId:event.announcementId},data:{lastKnownEndAt:announcement!.applicationEndAt}});
       if(ticket?.details?.error==='DeviceNotRegistered')await this.db.candidateProfile.updateMany({where:{userId:p.userId,pushToken:current.pushToken},data:{pushToken:null}});
      }catch{await this.db.candidateNotification.update({where:{id:event.id},data:{status:'UNKNOWN'}});}
     }
