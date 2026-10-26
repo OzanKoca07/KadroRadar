@@ -29,6 +29,7 @@ COPY --chown=node:node services/ingest/official_gazette.py services/ingest/offic
 RUN mkdir -p /app/.local/gazette /app/.local/historical /app/.local/sources && chown -R node:node /app/.local
 ENV NODE_ENV=production
 ENV INGEST_PYTHON=/opt/ingest/bin/python
+ENV DOCUMENT_UPLOADS_ENABLED=false SOURCE_SYNC_ENABLED=false NOTIFICATIONS_ENABLED=false ALLOW_SELF_REGISTRATION=false
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||process.env.API_PORT||3000)+'/api/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"

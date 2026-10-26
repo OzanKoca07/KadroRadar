@@ -33,7 +33,7 @@ def scan(data, location):
     for rule, pattern in RULES.items():
         for match in pattern.finditer(data):
             value = match.group(1) if match.lastindex else match.group(0)
-            if rule == 'credential-url' and value in PUBLIC_TEST_VALUES:
+            if rule == 'credential-url' and (value in PUBLIC_TEST_VALUES or re.fullmatch(rb'\$\{[\w.]+\}', value)):
                 known.add(location)
                 continue
             if rule == 'literal-secret' and (value in PUBLIC_TEST_VALUES or b'process.env' in value or b'random' in value or b'${' in value or b'example' in value or b'test' in value.lower()):

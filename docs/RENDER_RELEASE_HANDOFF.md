@@ -1,5 +1,35 @@
 # KadroRadar — Render release teslimi
 
+## 26 Ekim 2026 — deployment hazırlığı doğrulaması
+
+Başlangıçta yerel HEAD ve canlı `git ls-remote origin feature/announcements-core` sonucu **`7839ee47799fed0b1b7ab2ea6d9efcc3c6dc3266`** ile eşleşti; çalışma ağacı temizdi. Önceki release korunuyor. Bu güncellemenin kimliği `git log -1 --format=%H -- docs/RENDER_RELEASE_HANDOFF.md` ile alınabilir; nihai GitHub eşleşmesi teslim yanıtında ayrıca bildirilir.
+
+Render yönetim bağlantısı/API credential'ı yoktur; gerçek HTTPS URL veya Render deployment doğrulanmadı. Docker Desktop yerel test için arka planda başlatıldı. Mevcut gerçek `infra-db-1` container'ı **exited** durumunda kaldı; başlatılmadı, migrate edilmedi, veri yazılmadı. Önceki504 kaydın bulunduğu volume'a test bağlanmadı.
+
+| Yeni kontrol | 26 Ekim sonucu |
+| --- | --- |
+| 12 migration SQL yeniden incelemesi | PASS; SQL dosyaları değiştirilmedi, destructive işlem yok |
+| Prisma validate ve 11 production environment kontrolü | PASS |
+| Docker monorepo build | PASS; son test image `sha256:79425c48560dbe7ede32f90959ca992e53d670af662e445438ac97de36441a91` |
+| Free kapalı varsayılanları | Image env: document/source/notification/self-registration `false`; Render tablosuyla tutarlı |
+| `PORT=10000`, `API_PORT=3999` | Dışarıdan doğru port erişimi PASS; 0.0.0.0 bind korundu |
+| Otomatik migration/hesap | Startup sonrasında public tablo sayısı0; migration sonrası User ve HistoricalPlacement0; varsayılan seed yok |
+| Açık migration / tekrar deploy | Yalnızca yeni disposable PostgreSQL container'ında12 migration; tekrar deploy sonrası12; operatör wrapper'ının migrate/status komutları PASS |
+| Migration sonrası boş API | Güncel/arşiv/tüm ilanlar ve üç eğitim filtresinde geçmiş yerleştirmeler200, items[], total0; rounds[] ve boş filters; olmayan ilan404, yetkisiz admin401 |
+| `/admin/`, `/privacy`, `/delete-account` ve legal asset'ler | 200; admin JS gerçek göreli `/api/v1` kullanıyor, localhost API adresi içermiyor |
+| DB bağlantısı kesik | Yalnızca test PG durduruldu; health503, genel `Database unavailable` mesajı; connection secret sızıntısı yok |
+| DB yeniden erişilebilir | Health200; bu test veri kurtarma testi değildir |
+| Admin provisioning | Yalnızca disposable DB'de rastgele test parolalı editör; scrypt-v2 hash, duplicate hesap/rol yükseltme reddi PASS; production admin oluşturulmadı |
+| Operatör güvenlik testleri | Eksik URL/.env fallback, yanlış host/DB, eksik yazma teyidi/reset reddi ve secret maskeleme PASS; PowerShell AST sözdizimi PASS |
+
+Yeni testler: `node infra/test-render-database.cjs`, `node infra/test-render-readiness.cjs`. İkinci komut dış DATABASE_URL okumaz; kendine özel yeni PostgreSQL container'ı ve network oluşturur, yalnızca bunlara migration uygular, sonunda temizler. Test raporu Git dışında `.local/release/render-readiness.json`. Bu aşamada önceki33 Python/919 ÖSYM/OCR/Android testleri yeniden çalıştırılmadı; aşağıdaki25 Ekim sonuçları kendi tarihli kanıttır.
+
+**Health kapsamı:** endpoint `SELECT 1` ile bağlantıyı denetler. Schema henüz migrate edilmemiş olsa bile DB bağlanıyorsa200 dönebilir; migration status ve public API kontrolleri ayrıca zorunludur. Gerçek DB yokken veya erişilemiyorken503 doğrulandı.
+
+**Güvenli kullanıcı sırası:** PostgreSQL → Web Service → gerçek env değerleri → ilk deployment → ayrı kullanıcı onayıyla migration → onaylı admin hesabı → health/public API kontrolü. Ayrıntılı alan tablosu ve secrets'ı komut geçmişine yazdırmayan PowerShell komutları [Render kurulum belgesinde](RENDER_DEPLOYMENT_SETUP.md). Gerçek URL/DB secrets/işletmeci/destek e-postası kullanıcı tarafından sağlanmalı; henüz yayımlanmayan legal sayfalar tamamlanmış politika sayılmaz.
+
+## 25 Ekim release kaydı
+
 25 Ekim 2026. Kod GitHub'a gönderildi; Render deployment, gerçek DB migration, ücretli servis oluşturma, production ilan yayını veya Play upload yapılmadı.
 
 ## Release kimliği ve Git

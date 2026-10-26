@@ -1,0 +1,11 @@
+const assert=require('node:assert/strict'),{validateTarget,main,redact}=require('./render-database.cjs');
+const env={DATABASE_URL:'postgresql://fixture:placeholder@database.example.test/isolated'};
+assert.equal(validateTarget(env,'database.example.test','isolated'),'database.example.test/isolated');
+for(const sample of [{},{DATABASE_URL:''},{DATABASE_URL:'https://database.example.test/isolated'},{DATABASE_URL:'postgresql://database.example.test/isolated'}])assert.throws(()=>validateTarget(sample,'database.example.test','isolated'));
+assert.throws(()=>validateTarget(env,'other.example.test','isolated'));
+assert.throws(()=>validateTarget(env,'database.example.test','other'));
+for(const action of ['migrate','create-admin'])assert.throws(()=>main([action,'database.example.test','isolated'],env),/approval/);
+assert.throws(()=>main(['reset','database.example.test','isolated','APPROVE'],env));
+const secrets={DATABASE_URL:'postgresql://fixture:'+encodeURIComponent('some@fixture')+'@database.example.test/isolated',NEW_ADMIN_PASSWORD:'temporary-fixture-only'};
+assert.equal(redact([secrets.DATABASE_URL,'some%40fixture','some@fixture',secrets.NEW_ADMIN_PASSWORD].join(' '),secrets),'[REDACTED] [REDACTED] [REDACTED] [REDACTED]');
+console.log('PASS: explicit DB URL/target, no .env fallback, write approval and reset rejection; no DB commands executed');
