@@ -8,8 +8,8 @@ jobs:
         shell: [powershell, pwsh]
     steps:
       - uses: actions/checkout@v4
-      - run: .\infra\test-private-directory.ps1
-        shell: ${{ matrix.shell }}
+      - run: ${{ matrix.shell }} -NoProfile -File .\infra\test-private-directory.ps1
+        shell: powershell
   render-runtime:
     runs-on: ubuntu-latest
     steps:
