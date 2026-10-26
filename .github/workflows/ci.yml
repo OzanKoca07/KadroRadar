@@ -34,6 +34,7 @@ jobs:
       - run: python -m unittest discover -s services/ingest -p test_manual_import.py -v
       - run: python -m unittest discover -s services/ingest -p test_official_gazette.py -v
       - run: python -m unittest discover -s services/ingest -p test_osym_web.py -v
+      - run: python -m unittest discover -s services/ingest -p test_osym_archive.py -v
   typescript:
     runs-on: ubuntu-latest
     services:
@@ -71,4 +72,5 @@ jobs:
       - run: node apps/api/test-admin-browser.cjs
       - run: node apps/api/test-legal-browser.cjs
       - run: node apps/api/test-historical-import.cjs
+      - run: node apps/api/test-historical-formats.cjs
       - run: pnpm --filter @kadro/mobile exec tsc --noEmit

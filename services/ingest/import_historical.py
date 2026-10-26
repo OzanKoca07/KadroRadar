@@ -3,8 +3,12 @@ from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 from pathlib import Path
 from decimal import Decimal
 import fitz
+import unicodedata
 
 def document_metadata(path):
+    if Path(path).read_bytes()[:5]!=b'%PDF-':
+        from historical_tables import table_metadata
+        return table_metadata(path)
     with fitz.open(str(path)) as doc:
         if doc.needs_pass or not 1<=len(doc)<=600:raise ValueError('PDF resource limit')
         text=doc[0].get_text().replace('\u00a0',' ').replace('\u00ad','-')
@@ -23,25 +27,39 @@ def parse_pdf(path,education=None):
     rows=[]; errors=[]
     for page_no,page in enumerate(doc,1):
         lines=[x.strip().replace('\u00a0',' ').replace('\u00ad','-') for x in page.get_text().splitlines() if x.strip()]
-        starts=[i for i,x in enumerate(lines) if re.fullmatch(prefix+r'\d{8}',x)]
+        starts=[i for i,x in enumerate(lines) if re.fullmatch(r'[123]\d{8}',x)]
         for j,start in enumerate(starts):
             part=lines[start:starts[j+1] if j+1<len(starts) else len(lines)]
             try:
-                k=next(i for i,x in enumerate(part) if re.fullmatch(r'\d{1,3},\d{5} +\d{1,3},\d{5}',x))
+                if not part[0].startswith(prefix):raise ValueError('Education/code prefix mismatch')
+                k=next(i for i,x in enumerate(part) if re.fullmatch(r'\d{1,3}[,.]\d{5}(?: +\d{1,3}[,.]\d{5})?|[-–—]{1,2}(?: +[-–—]{1,2})?',x))
                 quota,placed,vacant=map(int,part[k-3:k])
-                low,high=[Decimal(x.replace(',','.')) for x in part[k].split()]
+                scores=part[k].split()
+                if len(scores)==1:scores.append(part[k+1])
+                if placed==0 and all(re.fullmatch(r'[-–—]{1,2}',x) for x in scores):low=high=None
+                else:
+                    if not all(re.fullmatch(r'\d{1,3}[,.]\d{5}',x) for x in scores):raise ValueError('Two exact five-decimal score cells required')
+                    low,high=[Decimal(x.replace(',','.')) for x in scores]
                 if placed==0 and low==0 and high==0: low=high=None
-                assert quota>=placed>=0 and vacant==quota-placed
-                assert (placed==0 and low is None) or (placed>0 and 0<low<=high<=100)
+                if not quota>=placed>=0 or vacant!=quota-placed:raise ValueError('Quota integrity failure')
+                if not ((placed==0 and low is None) or (placed>0 and low is not None and high is not None and 0<low<=high<=100)):raise ValueError('Score/count integrity failure')
                 institution=part[1];title=' '.join(part[2:k-3])
-                assert institution and title
-                rows.append(dict(positionCode=part[0],institutionRawName=institution,title=title,city=institution.split(' / ')[1] if ' / ' in institution else '',quota=quota,placedCount=placed,vacantCount=vacant,minScore=str(low) if low is not None else None,maxScore=str(high) if high is not None else None,sourcePage=page_no,rawRecord=part))
+                if not institution or not title:raise ValueError('Missing institution/title')
+                if any('\ufffd' in x for x in (institution,title)):raise ValueError('Unrecoverable source encoding; manual review required')
+                institution=unicodedata.normalize('NFC',institution);title=unicodedata.normalize('NFC',title)
+                rows.append(dict(positionCode=part[0],institutionRawName=institution,title=title,city=institution.split(' / ')[1] if ' / ' in institution else '',quota=quota,placedCount=placed,vacantCount=vacant,minScore=format(low,'.5f') if low is not None else None,maxScore=format(high,'.5f') if high is not None else None,sourcePage=page_no,rawRecord=part))
             except (ValueError,AssertionError,StopIteration,IndexError) as e:
                 errors.append(dict(code=part[0],page=page_no,raw=part,error=str(e)))
     if len(set(x['positionCode'] for x in rows))!=len(rows):errors.append({'error':'Duplicate codes'})
     doc.close()
     if not rows:errors.append({'error':'No supported placement rows'})
     return rows,errors
+
+def parse_document(path,education=None):
+    if Path(path).stat().st_size>64*1024*1024:raise ValueError('Document resource limit')
+    if Path(path).read_bytes()[:5]==b'%PDF-':return parse_pdf(path,education)
+    from historical_tables import parse_table
+    return parse_table(path,education)
 
 def postgres_connection_string():
     """Translate Prisma's schema query option into a libpq-compatible DSN."""
@@ -88,7 +106,7 @@ if __name__=='__main__':
     p=argparse.ArgumentParser()
     p.add_argument('--file',required=True);p.add_argument('--year',type=int,default=2024);p.add_argument('--round',type=int,default=1);p.add_argument('--education',choices=['BACHELOR','ASSOCIATE','HIGH_SCHOOL'])
     g=p.add_mutually_exclusive_group(required=True);g.add_argument('--dry-run',action='store_true');g.add_argument('--commit',action='store_true');g.add_argument('--parse-json',action='store_true')
-    a=p.parse_args();rows,errors=parse_pdf(a.file)
+    a=p.parse_args();rows,errors=parse_document(a.file)
     if a.parse_json:print(json.dumps({'rows':rows,'errors':errors,'metadata':document_metadata(a.file)},ensure_ascii=True));raise SystemExit(0)
     print(json.dumps({'parsed':len(rows),'unresolved':len(errors),'issues':errors[:10]},ensure_ascii=False))
     if a.dry_run:Path('historical-staging.json').write_text(json.dumps({'rows':rows,'errors':errors},ensure_ascii=False,indent=2))

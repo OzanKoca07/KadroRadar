@@ -88,6 +88,7 @@
     "organization": "ÖSYM",
     "hosts": [
       "www.osym.gov.tr",
+      "osym.gov.tr",
       "dokuman.osym.gov.tr"
     ],
     "feed": "https://www.osym.gov.tr/",

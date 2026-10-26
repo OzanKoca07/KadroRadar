@@ -1,8 +1,10 @@
-﻿# KadroRadar
+# KadroRadar
 
 Bağımsız kamu ilanı ve ÖSYM geçmiş yerleştirme uygulaması. NestJS/Prisma/PostgreSQL API, React admin ve Expo SDK54 mobil uygulama içerir. Kamu kurumlarının resmî uygulaması değildir.
 
 ## Release belgeleri
+
+- [ÖSYM dönem genişletmesi ve 18 belge test raporu](docs/OSYM_HISTORICAL_EXPANSION.md)
 
 - [Render kurulumu](docs/RENDER_DEPLOYMENT_SETUP.md)
 - [Release teslimi ve testler](docs/RENDER_RELEASE_HANDOFF.md)

@@ -16,6 +16,7 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [sourcePreview,setSourcePreview]=useState('');
   const [confirmation,setConfirmation]=useState('');
+  const [sourceMetadata,setSourceMetadata]=useState<any>(null);
   useEffect(()=>()=>{if(sourcePreview)URL.revokeObjectURL(sourcePreview);},[sourcePreview]);
   async function preview(){if(!chosen)return;try{const response=await fetch(API+'/admin/historical-documents/'+chosen.id+'/file',{credentials:'include'});if(!response.ok)throw Error('Kaynak PDF mevcut değil veya erişim reddedildi');setSourcePreview(URL.createObjectURL(await response.blob()));}catch(error){setMessage(String(error));}}
   async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -31,7 +32,8 @@ function App() {
   async function openBatch(b: Batch, p = 1) {
     setSourcePreview('');
     setConfirmation('');
-    setBusy(true); try { const d = await request<{items: ImportRow[]}>('/admin/imports/' + encodeURIComponent(b.id) + '?page=' + p); setChosen(b); setRows(d.items); setPage(p); setMessage(''); }
+    setSourceMetadata(null);
+    setBusy(true); try { const [d,source] = await Promise.all([request<{items: ImportRow[]}>('/admin/imports/' + encodeURIComponent(b.id) + '?page=' + p),request<any>('/admin/historical-documents/'+encodeURIComponent(b.id)+'/metadata')]); setSourceMetadata(source); setChosen(b); setRows(d.items); setPage(p); setMessage(''); }
     catch(e) { setMessage(String(e)); } finally { setBusy(false); }
   }
   async function approve() {
@@ -55,6 +57,8 @@ function App() {
     </section>
     {chosen && <section style={{background:'white',padding:22,borderRadius:12}}>
       <h2>Parti inceleme · {chosen.state}</h2><p>Kaynak SHA-256: <code>{chosen.sourceSha256}</code></p>
+      {sourceMetadata?.originalUrl&&<p>Resmî belge: <a href={sourceMetadata.originalUrl} target="_blank" rel="noopener noreferrer">{sourceMetadata.originalUrl}</a></p>}
+      {sourceMetadata?.historicalEvidence&&<details><summary>Dönem, tarih ve kaynak doğrulama kanıtı</summary><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{JSON.stringify(sourceMetadata.historicalEvidence,null,2)}</pre><p>Nitelik kodları kadroyla doğrulanmadıkça uygunluk hesaplanmaz.</p></details>}
       <button onClick={preview}>ÖSYM kaynak PDF önizle</button>{sourcePreview&&<iframe title="ÖSYM kaynak PDF" src={sourcePreview} style={{width:'100%',height:600}}/>}
       <p>Satırları kaynak PDF sayfasıyla karşılaştır. Otomatik bütünlük kontrolü, insan incelemesinin yerini tutmaz.</p>
       <div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse'}}><thead><tr>{['PDF s.','Kadro kodu','Kurum','Unvan','Kontenjan','En küçük','En büyük','Hata'].map(x=><th key={x} style={cell}>{x}</th>)}</tr></thead><tbody>{rows.map(r=><tr key={r.id}><td style={cell}>{r.sourcePage}</td><td style={cell}>{r.positionCode}</td><td style={cell}>{String(r.raw.institutionRawName??'')}</td><td style={cell}>{String(r.raw.title??'')}</td><td style={cell}>{String(r.raw.quota??'')}</td><td style={cell}>{String(r.raw.minScore??'-')}</td><td style={cell}>{String(r.raw.maxScore??'-')}</td><td style={cell}>{r.issues.length}</td></tr>)}</tbody></table></div>

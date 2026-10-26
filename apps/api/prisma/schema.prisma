@@ -13,6 +13,7 @@ model SourceDocument {
  sha256 String @unique
  sourceOrganization String
  state String @default("DRAFT")
+ historicalEvidence Json?
  createdAt DateTime @default(now())
  placements HistoricalPlacement[]
  gazetteImports AnnouncementImportRow[]
@@ -38,8 +39,8 @@ model HistoricalPlacement {
  quota Int
  placedCount Int
  vacantCount Int
- minScore Decimal? @db.Decimal(7,5)
- maxScore Decimal? @db.Decimal(7,5)
+ minScore Decimal? @db.Decimal(8,5)
+ maxScore Decimal? @db.Decimal(8,5)
  sourcePage Int
  rawRecord Json
  approvedAt DateTime?

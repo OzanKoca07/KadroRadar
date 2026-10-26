@@ -25,7 +25,7 @@ COPY --from=build --chown=node:node /app/apps/api /app/apps/api
 COPY --from=build --chown=node:node /app/packages /app/packages
 COPY --from=build --chown=node:node /app/apps/admin/dist /app/public/admin
 COPY --chown=node:node web /app/public/legal
-COPY --chown=node:node services/ingest/official_gazette.py services/ingest/official_rss.py services/ingest/import_historical.py services/ingest/osym_web.py /app/services/ingest/
+COPY --chown=node:node services/ingest/official_gazette.py services/ingest/official_rss.py services/ingest/import_historical.py services/ingest/historical_tables.py services/ingest/osym_web.py /app/services/ingest/
 RUN mkdir -p /app/.local/gazette /app/.local/historical /app/.local/sources && chown -R node:node /app/.local
 ENV NODE_ENV=production
 ENV INGEST_PYTHON=/opt/ingest/bin/python

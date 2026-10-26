@@ -13,6 +13,7 @@ export default function Historical() {
   const [rounds, setRounds] = useState<Round[]>([]);
   const [selected, setSelected] = useState<Round | null>(null);
   const [education,setEducation]=useState('BACHELOR');
+  const [year,setYear]=useState('all');
   const [query, setQuery] = useState('');
   const [city, setCity] = useState('');
   const [score, setScore] = useState('83,50');
@@ -32,7 +33,7 @@ export default function Historical() {
     return () => { alive = false; };
   }, [refreshKey]);
 
-  useEffect(() => { setPage(1); }, [query, city, selected?.id]);
+  useEffect(() => { setPage(1); }, [query, city, selected?.id,year]);
   useEffect(() => {
     let alive = true;
     const controller = new AbortController();
@@ -41,6 +42,7 @@ export default function Historical() {
       try {
         const params = new URLSearchParams({ page: String(page), limit: '20', educationLevel: selected?.educationLevel || education });
         if (selected) { params.set('year', String(selected.year)); params.set('round', String(selected.sequenceNo)); }
+        else if(year!=='all')params.set('year',year);
         if (query.trim()) params.set('title', query.trim());
         if (city.trim()) params.set('city', city.trim());
         const res = await fetch(`${BASE}/historical/placements?${params.toString()}`, { signal: controller.signal });
@@ -52,7 +54,7 @@ export default function Historical() {
       } finally { if (alive) { setLoading(false); setRefreshing(false); } }
     }, 300);
     return () => { alive = false; clearTimeout(timer); controller.abort(); };
-  }, [page, query, city, selected?.id, education,refreshKey]);
+  }, [page, query, city, selected?.id, education,year,refreshKey]);
 
   const parsedScore = Number(score.replace(',', '.'));
   const hasScore = score.trim() !== '' && Number.isFinite(parsedScore) && parsedScore >= 0 && parsedScore <= 100;
@@ -71,10 +73,12 @@ export default function Historical() {
           <Text style={styles.fieldTitle}>KPSS puanın (karşılaştırma için)</Text>
           <TextInput style={styles.input} value={score} onChangeText={setScore} keyboardType="decimal-pad" placeholder="Örn. 83,50" accessibilityLabel="KPSS puanın" />
           <Text style={styles.fieldTitle}>Dönem</Text>
-          <View style={styles.chips}>{[['BACHELOR','Lisans'],['ASSOCIATE','Önlisans'],['HIGH_SCHOOL','Ortaöğretim']].map(([value,label])=><Pressable key={value} accessibilityRole="button" onPress={()=>{setEducation(value);setSelected(null);setPage(1);}} style={[styles.chip,education===value&&styles.chipActive]}><Text style={[styles.chipText,education===value&&styles.chipTextActive]}>{label}</Text></Pressable>)}</View>
+          <View style={styles.chips}>{[['BACHELOR','Lisans'],['ASSOCIATE','Önlisans'],['HIGH_SCHOOL','Ortaöğretim']].map(([value,label])=><Pressable key={value} accessibilityRole="button" onPress={()=>{setEducation(value);setYear('all');setSelected(null);setPage(1);}} style={[styles.chip,education===value&&styles.chipActive]}><Text style={[styles.chipText,education===value&&styles.chipTextActive]}>{label}</Text></Pressable>)}</View>
+          <Text style={styles.fieldTitle}>Yıl</Text>
+          <View style={styles.chips}>{['all',...[...new Set(rounds.filter(r=>r.educationLevel===education).map(r=>String(r.year)))].sort().reverse()].map(value=><Pressable key={value} accessibilityRole="button" onPress={()=>{setYear(value);setSelected(null);setPage(1);}} style={[styles.chip,year===value&&styles.chipActive]}><Text style={[styles.chipText,year===value&&styles.chipTextActive]}>{value==='all'?'Tüm yıllar':value}</Text></Pressable>)}</View>
           <View style={styles.chips}>
             <Pressable onPress={() => setSelected(null)} style={[styles.chip, !selected && styles.chipActive]}><Text style={[styles.chipText, !selected && styles.chipTextActive]}>Tüm dönemler</Text></Pressable>
-            {rounds.filter(r => r.educationLevel === education).map(r => <Pressable key={r.id} onPress={() => setSelected(r)} style={[styles.chip, selected?.id === r.id && styles.chipActive]}><Text style={[styles.chipText, selected?.id === r.id && styles.chipTextActive]}>{r.year}/{r.sequenceNo}</Text></Pressable>)}
+            {rounds.filter(r => r.educationLevel === education&&(year==='all'||String(r.year)===year)).map(r => <Pressable key={r.id} onPress={() => setSelected(r)} style={[styles.chip, selected?.id === r.id && styles.chipActive]}><Text style={[styles.chipText, selected?.id === r.id && styles.chipTextActive]}>{r.year}/{r.sequenceNo}</Text></Pressable>)}
           </View>
           <Text style={styles.fieldTitle}>Unvan ara</Text>
           <TextInput style={styles.input} placeholder="Örn. Memur, mühendis" value={query} onChangeText={setQuery} accessibilityLabel="Unvan ara" />
