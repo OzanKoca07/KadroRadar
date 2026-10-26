@@ -2,6 +2,8 @@
 
 26 Ekim 2026. **TESTED_LOCALLY**; **ACTIVE değil**. Production kaynak aktivasyonu, scheduler/ücretli servis oluşturma, ÖSYM aktarımı ve APK/AAB üretimi yapılmadı.
 
+Kod GitHub'a gönderildi: `998deb00efc3540cac7f7c1ea18f5fb7d4d6aa3d`. [CI40376209466](https://github.com/OzanKoca07/KadroRadar/actions/runs/40376209466) altı job ile PASS. Bu GitHub testidir; Render DEPLOYED veya canlı scheduler ACTIVE olduğu anlamına gelmez. Deployment erişim engeli ve manuel adımlar `GITHUB_RENDER_RELEASE_REPORT.md` içindedir.
+
 ## Yapılandırma
 
 | Değişken | Varsayılan / işlev |
