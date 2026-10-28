@@ -3,7 +3,7 @@
     "name": "KadroRadar",
     "slug": "kadroradar",
     "scheme": "kadroradar",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "plugins": [
@@ -15,11 +15,24 @@
             "usesCleartextTraffic": true
           }
         }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#F8F8F7",
+          "image": "./assets/splash.png",
+          "imageWidth": 200
+        }
       ]
     ],
     "android": {
       "package": "com.kadroradar.app",
-      "versionCode": 2
+      "versionCode": 3,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-foreground.png",
+        "backgroundColor": "#B42335",
+        "monochromeImage": "./assets/adaptive-foreground.png"
+      }
     },
     "extra": {
       "router": {},
@@ -27,6 +40,7 @@
         "projectId": "44bbc3b8-3306-4b9a-91c6-74a2eb2e0877"
       }
     },
-    "owner": "ozankoca"
+    "owner": "ozankoca",
+    "icon": "./assets/icon.png"
   }
 }

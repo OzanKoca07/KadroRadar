@@ -5,6 +5,8 @@ import { CandidateModule, CandidateAuth } from './candidate';
 import {GazetteModule} from './gazette';
 import {HistoricalImportModule} from './historical-import';
 import { Req } from '@nestjs/common';
+import {APP_FILTER} from '@nestjs/core';
+import {DatabaseErrorFilter} from './database-errors';
 
 @Injectable()
 class Db extends PrismaClient implements OnModuleDestroy {
@@ -64,6 +66,8 @@ class ApiController {
     @Query('minScoreGte') minScoreGte?: string,
     @Query('minScoreLte') minScoreLte?: string,
     @Query('positionCode') positionCode?: string,
+    @Query('maxScoreGte') maxScoreGte?: string,
+    @Query('maxScoreLte') maxScoreLte?: string,
   ) {
     const p = integerInRange(page, 1, 1, 100000);
     const l = integerInRange(limit, 20, 1, 100);
@@ -83,9 +87,15 @@ class ApiController {
     const gte = decimalOrUndefined(minScoreGte);
     const lte = decimalOrUndefined(minScoreLte);
     if (gte || lte) where.minScore = { ...(gte ? { gte } : {}), ...(lte ? { lte } : {}) };
+    const maxGte=decimalOrUndefined(maxScoreGte),maxLte=decimalOrUndefined(maxScoreLte);
+    for(const [raw,value] of [[minScoreGte,gte],[minScoreLte,lte],[maxScoreGte,maxGte],[maxScoreLte,maxLte]] as const){
+      if(raw!==undefined&&raw!==''&&(!value||value.lessThan(0)||value.greaterThan(100)))throw new BadRequestException('Score filter must be a decimal between 0 and 100');
+    }
+    if(gte&&lte&&gte.greaterThan(lte)||maxGte&&maxLte&&maxGte.greaterThan(maxLte))throw new BadRequestException('Invalid score range');
+    if(maxGte||maxLte)where.maxScore={...(maxGte?{gte:maxGte}:{}),...(maxLte?{lte:maxLte}:{})};
     const [items, total] = await this.db.$transaction([
       this.db.historicalPlacement.findMany({
-        where, skip: (p - 1) * l, take: l, orderBy: { positionCode: 'asc' },
+        where, skip: (p - 1) * l, take: l, orderBy: [{positionCode:'asc'},{id:'asc'}],
         select: {
           id: true, positionCode: true, institutionRawName: true, title: true,
           city: true, quota: true, placedCount: true, vacantCount: true,
@@ -97,6 +107,7 @@ class ApiController {
       this.db.historicalPlacement.count({ where }),
     ]);
     return { items, total, page: p, limit: l, pages: Math.ceil(total / l),
+      filterCapabilities:{minScoreRange:true,maxScoreRange:true},
       qualificationNote: 'Nitelik bilgisi doğrulanmadı: yalnızca tarihsel puan karşılaştırması' };
   }
 
@@ -216,5 +227,5 @@ class ReviewController {
   }
 }
 
-@Module({ imports: [AnnouncementsModule, CandidateModule, GazetteModule,HistoricalImportModule], controllers: [ApiController, ReviewController], providers: [Db] })
+@Module({ imports: [AnnouncementsModule, CandidateModule, GazetteModule,HistoricalImportModule], controllers: [ApiController, ReviewController], providers: [Db,{provide:APP_FILTER,useClass:DatabaseErrorFilter}] })
 export class AppModule {}

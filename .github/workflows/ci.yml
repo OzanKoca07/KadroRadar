@@ -85,3 +85,12 @@ jobs:
       - run: node apps/api/test-historical-import.cjs
       - run: node apps/api/test-historical-formats.cjs
       - run: pnpm --filter @kadro/mobile exec tsc --noEmit
+      - run: node apps/api/test-historical-release.cjs
+      - run: node infra/test-safe-database-errors.cjs && node infra/test-mobile-ui.cjs && node infra/check-preview-config.cjs
+      - name: Export Android preview bundle (no EAS build)
+        run: pnpm --filter @kadro/mobile exec expo export --platform android --output-dir ../../.local/ci-android-export
+        env:
+          EAS_BUILD_PROFILE: preview
+          EXPO_PUBLIC_API_URL: https://kadroradar.onrender.com/api/v1
+          EXPO_PUBLIC_PRIVACY_URL: https://kadroradar.onrender.com/privacy
+          EXPO_PUBLIC_ACCOUNT_DELETION_URL: https://kadroradar.onrender.com/delete-account

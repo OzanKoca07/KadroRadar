@@ -10,6 +10,7 @@ const loaded=new Module(filename,module);loaded._compile(compiled,filename);cons
   global.fetch=async()=>{throw Error('offline')};await assert.rejects(accountRequest('/account/profile'),/offline/);
   global.fetch=async()=>({status:500,ok:false});await assert.rejects(accountRequest('/account/profile'),/500/);
   setSession('ephemeral-test-token');global.fetch=async()=>({status:401,ok:false});await assert.rejects(accountRequest('/account/profile'),/giriş/);assert.equal(hasSession(),false);
+  setSession('ephemeral-test-token');const restarted=new Module(filename,module);restarted._compile(compiled,filename);assert.equal(restarted.exports.hasSession(),false);assert.equal(hasSession(),true);setSession(null);
   global.setTimeout=(callback)=>timer(callback,1);global.fetch=async(url,init)=>new Promise((resolve,reject)=>init.signal.addEventListener('abort',()=>reject(Object.assign(Error(),{name:'AbortError'}))));await assert.rejects(accountRequest('/account/profile'),/zaman aşımına/);
   global.fetch=async()=>({status:200,ok:true,json:async()=>({items:[]})});assert.deepEqual(await accountRequest('/account/matches'),{items:[]});
   console.log('PASS: mobile API missing config, offline, HTTP 500, expired session, timeout, empty result');

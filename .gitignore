@@ -75,3 +75,8 @@ apps/admin/src/*.js
 *.pfx
 *.sql.gz
 *.sql.zip
+
+# Release archives and signing/provider files remain local.
+/kadroradar.zip
+credentials.json
+google-services*.json

@@ -1,41 +1,27 @@
-import { useEffect, useState } from 'react';
-import { useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, Linking, Pressable, ScrollView, Text } from 'react-native';
+import {useEffect,useState} from 'react';
+import {useLocalSearchParams} from 'expo-router';
+import {Text,View} from 'react-native';
 import {accountRequest} from '../../lib/account';
-import {official} from '../../lib/official';
-
-export default function Detail() {
-  const {id} = useLocalSearchParams<{id: string}>();
-  const [item, setItem] = useState<any>(null);
-  const [error, setError] = useState('');
-  const [retry, setRetry] = useState(0);
-  const [matches,setMatches]=useState<any>(null);
-  const [accountMessage,setAccountMessage]=useState('');
-  useEffect(() => {
-    const controller = new AbortController(); let active = true;
-    setError(''); setItem(null);
-    const timer = setTimeout(() => controller.abort(), 15000);
-    fetch(`${process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '')}/announcements/${encodeURIComponent(id)}`, {signal: controller.signal})
-      .then(async r => {if (!r.ok) throw new Error('İlan yüklenemedi'); return r.json();})
-      .then(value => {if (active) setItem(value);}).catch(() => {if (active) setError('İlan yüklenemedi. Bağlantınızı kontrol edin.');}).finally(() => clearTimeout(timer));
-    return () => {active = false; clearTimeout(timer); controller.abort();};
-  }, [id, retry]);
-  return <ScrollView contentContainerStyle={{padding: 24, gap: 16}}>
-    {error ? <Pressable accessibilityRole="button" onPress={() => setRetry(retry + 1)}><Text>{error} Tekrar dene</Text></Pressable> : !item ? <ActivityIndicator /> : <>
-      <Text style={{fontSize: 25, fontWeight: '800'}}>{item.title}</Text><Text>{item.organization}</Text>
-      {item.sourceEvidence?.kind==='OFFICIAL_GAZETTE'&&<Text>Kaynak: T.C. Resmî Gazete · {item.sourceEvidence.gazetteDate} · Sayı {item.sourceEvidence.gazetteNumber}{'\n'}Sayfa {item.sourceEvidence.pageStart}–{item.sourceEvidence.pageEnd}{'\n'}Belge SHA-256: {item.sourceEvidence.documentSha256??item.sourceEvidence.pdfSha256}{item.sourceEvidence.format==='HTML'?' (HTML: sayfa numarası mantıksal bölümdür)':''}{!item.sourceUrl?'\nÇevrimiçi kaynak bağlantısı doğrulanmamış; belge bilgileri kaynak referansıdır.':''}</Text>}
-      <Pressable accessibilityRole="button" onPress={async()=>{try{await accountRequest('/account/saved/'+encodeURIComponent(id),'PUT',{});setAccountMessage('İlan kaydedildi.');}catch(e){setAccountMessage(String(e));}}}><Text style={{color:'#2855AB'}}>İlanı kaydet</Text></Pressable>
-      <Pressable accessibilityRole="button" onPress={async()=>{try{setMatches(await accountRequest('/account/matches/'+encodeURIComponent(id)));}catch(e){setAccountMessage(String(e));}}}><Text style={{color:'#2855AB'}}>Kadroları profilimle karşılaştır</Text></Pressable>
-      <Text accessibilityRole="alert">{accountMessage}</Text>
-      {matches && <><Text>{matches.emptyReason}</Text>{matches.items.map((position:any)=><Text key={position.positionId}>{position.title}: {({ELIGIBLE:'UYGUN',INELIGIBLE:'UYGUN DEĞİL',UNKNOWN:'BELİRSİZ / DOĞRULAMA GEREKLİ'} as any)[position.outcome]}{'\n'}{position.reasons.map((reason:any)=>reason.reason).join('\n')}</Text>)}</>}
-      {['positionTitle', 'city', 'educationLevel'].map(key => item[key] ? <Text key={key}>{item[key]}</Text> : null)}
-      <Text>KadroRadar doğrulanmış temel ilan bilgilerini indeksler. Tam metin ve ayrıntılı koşullar için orijinal resmî ilanı inceleyin.</Text>
-      {(item.positions??[]).map((position:any)=><Text key={position.id}>{position.title} · {position.city??'Şehir belirtilmemiş'} · Kontenjan: {position.quota??'Belirtilmemiş'}{'\n'}{position.verifiedAt?'Kadro kaynaktan kontrol edilmiş.':'Kadro koşulları doğrulanmamış.'}{'\n'}Eğitim: {position.requirements.educationLevels?.join(', ')??'Belirtilmemiş'}{'\n'}KPSS: {position.requirements.kpssRequired===false?'Aranmıyor':`${position.requirements.kpssScoreType??'Puan türü belirsiz'} · ${position.requirements.kpssMinimumScore??'Taban puan belirsiz'}`}</Text>)}
-      <Text>Başlangıç: {item.applicationStartAt?new Date(item.applicationStartAt).toLocaleString('tr-TR',{timeZone:'Europe/Istanbul'}):'Doğrulanmamış'}{'\n'}Bitiş: {item.applicationEndAt?new Date(item.applicationEndAt).toLocaleString('tr-TR',{timeZone:'Europe/Istanbul'}):'Doğrulanmamış'}</Text>
-      <Text>Son doğrulama: {item.sourceCheckedAt ? new Date(item.sourceCheckedAt).toLocaleString('tr-TR', {timeZone: 'Europe/Istanbul'}) : 'Doğrulanmamış'}</Text>
-      {(['sourceUrl', 'applicationUrl'] as const).map(key => item[key] && official(item[key]) ? <Pressable key={key} accessibilityRole="link" onPress={() => Linking.openURL(item[key]).catch(() => setError('Bağlantı açılamadı.'))}><Text style={{color: '#2855AB'}}>{key === 'sourceUrl' ? 'Resmî duyuruyu görüntüle' : 'Resmî başvuru platformuna git'}{ '\n'}{item[key]}</Text></Pressable> : null)}
-      {(item.sourceReferences??[]).filter((ref:any)=>ref.sourceUrl&&official(ref.sourceUrl)&&ref.sourceUrl!==item.sourceUrl).map((ref:any)=><Pressable key={ref.sourceUrl} accessibilityRole="link" onPress={()=>Linking.openURL(ref.sourceUrl).catch(()=>setError('Bağlantı açılamadı.'))}><Text style={{color:'#2855AB'}}>Diğer resmî ilan kaynağı{'\n'}{ref.sourceUrl}</Text></Pressable>)}
-      <Text>KadroRadar herhangi bir kamu kurumunun resmî uygulaması değildir. Başvurular ilgili kurumların resmî platformlarından yapılır.</Text>
-    </>}
-  </ScrollView>;
+import {announcementDetailRequest} from '../../lib/announcement-api';
+import {announcementStatus,dateTimeText,educationLabel,errorText,type Announcement} from '../../lib/presentation';
+import {Badge,Button,Card,ErrorState,Fact,Heading,Independence,Notice,OfficialLink,Screen,SkeletonCards} from '../../ui/components';
+import {ui} from '../../ui/theme';
+type Match={positionId:string;title:string;outcome:string;reasons:{reason:string}[]};
+export default function Detail(){
+ const {id}=useLocalSearchParams<{id:string}>();
+ const [item,setItem]=useState<Announcement|null>(null),[error,setError]=useState(''),[retry,setRetry]=useState(0),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
+ const [matches,setMatches]=useState<{items:Match[];emptyReason?:string}|null>(null);
+ useEffect(()=>{const controller=new AbortController();let active=true;setError('');setItem(null);setMatches(null);setMessage('');announcementDetailRequest(id,controller.signal).then(value=>{if(active)setItem(value);}).catch(e=>{if(active)setError(errorText(e));});return()=>{active=false;controller.abort();};},[id,retry]);
+ async function action(work:()=>Promise<void>){setBusy(true);setMessage('');try{await work();}catch(e){setMessage(errorText(e));}finally{setBusy(false);}}
+ return <Screen>{error?<ErrorState message={error} onRetry={()=>setRetry(k=>k+1)}/>:!item?<SkeletonCards/>:<>
+  <Badge text={announcementStatus(item)} tone={announcementStatus(item)==='Başvuru açık'?'success':'warning'}/><Heading title={item.title} description={item.organization}/>
+  <Card><Text style={ui.heading}>Bir bakışta</Text><Fact label="Kadro" value={item.positionTitle||'Belirtilmemiş'}/><Fact label="Şehir" value={item.city||'Belirtilmemiş'}/><Fact label="Kontenjan" value={item.quota??'Belirtilmemiş'}/>{item.educationLevel&&<Fact label="Eğitim" value={educationLabel(item.educationLevel)}/>}<Fact label="Başvuru başlangıcı" value={dateTimeText(item.applicationStartAt)}/><Fact label="Son başvuru" value={dateTimeText(item.applicationEndAt)}/></Card>
+  <Button title="İlanı kaydet" icon="bookmark-outline" disabled={busy} onPress={()=>void action(async()=>{await accountRequest('/account/saved/'+encodeURIComponent(id),'PUT',{});setMessage('İlan kaydedildi. Değişikliklerini Kaydedilenler ekranından takip edebilirsin.');})}/>
+  <Button title="Profilimle karşılaştır" icon="checkmark-circle-outline" variant="secondary" disabled={busy} onPress={()=>void action(async()=>setMatches(await accountRequest('/account/matches/'+encodeURIComponent(id))))}/>
+  {!!message&&<Text accessibilityRole="alert" style={ui.body}>{message}</Text>}
+  {matches&&<Card><Text style={ui.heading}>Kadro bazında sonuçların</Text>{matches.emptyReason&&<Text style={ui.muted}>{matches.emptyReason}</Text>}{matches.items.map(position=><View key={position.positionId} style={{gap:8}}><Text style={ui.label}>{position.title}</Text><Badge tone={position.outcome==='ELIGIBLE'?'success':'warning'} text={position.outcome==='ELIGIBLE'?'UYGUN':position.outcome==='INELIGIBLE'?'UYGUN DEĞİL':'BELİRSİZ / DOĞRULAMA GEREKLİ'}/>{position.reasons.map((reason,index)=><Text key={index} style={ui.muted}>• {reason.reason}</Text>)}</View>)}</Card>}
+  {(item.positions??[]).map(position=><Card key={position.id}><Text style={ui.heading}>{position.title}</Text><Text style={ui.muted}>{position.city||'Şehir belirtilmemiş'} · {position.quota??'Belirtilmemiş'} kontenjan</Text><Badge text={position.verifiedAt?'Kaynaktan kontrol edilmiş':'Koşullar doğrulanmamış'} tone={position.verifiedAt?'neutral':'warning'}/><Fact label="Eğitim" value={position.requirements.educationLevels?.map(educationLabel).join(', ')||'Belirtilmemiş'}/><Fact label="KPSS" value={position.requirements.kpssRequired===false?'Aranmıyor':(position.requirements.kpssScoreType||'Puan türü belirsiz')+' · '+(position.requirements.kpssMinimumScore??'Taban puan belirsiz')}/></Card>)}
+  <Notice title="Başvurudan önce resmî koşulları kontrol et">KadroRadar temel bilgileri indeksler. Tam ilan metni ve tüm koşullar ilgili kurumun resmî sayfasındadır. Belirsiz koşullar başvuru hakkı anlamına gelmez.</Notice>
+  <Card><Text style={ui.heading}>Resmî kaynak ve başvuru</Text><Fact label="Son doğrulama" value={dateTimeText(item.sourceCheckedAt)}/>{item.sourceEvidence?.kind==='OFFICIAL_GAZETTE'&&<Text style={ui.muted}>T.C. Resmî Gazete · {String(item.sourceEvidence.gazetteDate??'Tarih belirtilmemiş')} · Sayı {String(item.sourceEvidence.gazetteNumber??'Belirtilmemiş')}</Text>}<OfficialLink url={item.sourceUrl} title="Resmî duyuruyu görüntüle"/><OfficialLink url={item.applicationUrl} title="Resmî başvuru platformuna git"/>{(item.sourceReferences??[]).filter(ref=>ref.sourceUrl!==item.sourceUrl).map(ref=><OfficialLink key={ref.sourceUrl} url={ref.sourceUrl} title="Diğer resmî kaynağı incele"/>)}</Card><Independence/>
+ </>}</Screen>;
 }

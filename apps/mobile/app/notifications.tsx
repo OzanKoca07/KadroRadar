@@ -1,9 +1,19 @@
-import {useState,useCallback} from 'react';
-import {useFocusEffect,Link} from 'expo-router';
-import {FlatList,Text,Pressable,View} from 'react-native';
-import {SafeAreaView} from 'react-native-safe-area-context';
+import {useState,useCallback,useRef} from 'react';
+import {useFocusEffect,router} from 'expo-router';
+import {FlatList,Text,View} from 'react-native';
 import {accountRequest} from '../lib/account';
-export default function Inbox(){const [rows,setRows]=useState<any[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false);
- const load=useCallback(async()=>{setBusy(true);setError('');try{await accountRequest('/account/notifications/refresh','POST',{});setRows(await accountRequest('/account/notifications'));}catch(e){setError(String(e));}finally{setBusy(false);}},[]);useFocusEffect(useCallback(()=>{void load();},[load]));
- return <SafeAreaView edges={['bottom']} style={{flex:1,padding:20}}><Text style={{fontSize:26,fontWeight:'800'}}>Bildirimler</Text>{error?<Pressable onPress={load}><Text>{error} Tekrar dene</Text></Pressable>:<FlatList refreshing={busy} onRefresh={load} data={rows} keyExtractor={r=>r.id} ListEmptyComponent={<Text>Henüz bildirim yok. İzin ve tercihlerinizi Profil ekranından yönetin.</Text>} renderItem={({item})=><View style={{padding:16}}><Link href={{pathname:'/announcement/[id]',params:{id:item.announcementId}}}>{item.title}</Link><Text>{new Date(item.createdAt).toLocaleString('tr-TR')} · {item.status==='PROVIDER_ACCEPTED'?'Bildirim sağlayıcısı kabul etti':item.status==='ACCEPTED'?'Gönderim kuyruğunda':'Uygulama içi kayıt'}</Text></View>}/>}</SafeAreaView>;
+import {verifiedReferences} from '../lib/announcement-api';
+import {dateText,errorText} from '../lib/presentation';
+import {Button,Card,EmptyState,ErrorState,Heading,SkeletonCards} from '../ui/components';
+import {ui} from '../ui/theme';
+type Notification={id:string;announcementId:string;title:string;createdAt:string;status:string};
+export default function Inbox(){
+ const [rows,setRows]=useState<Notification[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(true),request=useRef(0);
+ const load=useCallback(async()=>{const current=++request.current;setBusy(true);setError('');try{await accountRequest('/account/notifications/refresh','POST',{});const result=await accountRequest('/account/notifications');const allowed=await verifiedReferences<Notification>(result,item=>item.announcementId);if(current===request.current)setRows(allowed);}catch(e){if(current===request.current)setError(errorText(e));}finally{if(current===request.current)setBusy(false);}},[]);
+ useFocusEffect(useCallback(()=>{void load();return()=>{request.current++;};},[load]));
+ return <View style={ui.root}><FlatList data={busy||error?[]:rows} keyExtractor={item=>item.id} contentContainerStyle={ui.content} refreshing={busy} onRefresh={load}
+  ListHeaderComponent={<View style={{gap:16}}><Heading title="Gelişmelerden haberdar ol." description="Kaynağı kontrol edilebilen ilan güncellemeleri burada. Bildirim iznin ve tercihlerin kontrolün altında."/><Button title="Bildirim tercihlerimi yönet" variant="secondary" onPress={()=>router.push('/profile')}/>{error?<ErrorState message={error} onRetry={load}/>:busy?<SkeletonCards/>:null}</View>}
+  ListEmptyComponent={!busy&&!error?<EmptyState icon="notifications-outline" title="Şimdilik her şey güncel" description="Yeni bildirimler burada yer alacak. İzinlerini Profil ekranından yönetebilirsin."/>:null}
+  renderItem={({item})=><Card><Text style={ui.caption}>{dateText(item.createdAt)}</Text><Text style={ui.heading}>{item.title}</Text><Text style={ui.muted}>{item.status==='PROVIDER_ACCEPTED'?'Sağlayıcıya iletildi':item.status==='ACCEPTED'?'Gönderim kuyruğunda':'Uygulama içi güncelleme'}</Text><Button title="İlanı incele" variant="secondary" onPress={()=>router.push({pathname:'/announcement/[id]',params:{id:item.announcementId}})}/></Card>}
+ /></View>;
 }

@@ -1,60 +1,39 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'expo-router';
-import { FlatList, Text, TextInput, Pressable, View, ActivityIndicator } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {useEffect,useRef,useState} from 'react';
+import {FlatList,Text,View} from 'react-native';
+import {router} from 'expo-router';
 import {announcementRequest} from '../lib/announcement-api';
-
-export default function Announcements() {
-  const [archive, setArchive] = useState(false);
-  const [q, setQ] = useState('');
-  const [page, setPage] = useState(1);
-  const [reload, setReload] = useState(0);
-  const [showFilters,setShowFilters]=useState(false);
-  const [filters,setFilters]=useState<Record<string,string>>({});
-  const [draftFilters,setDraftFilters]=useState<Record<string,string>>({});
-  function filter(key:string,value:string){setDraftFilters(current=>({...current,[key]:value,...(key==='kpssRequired'&&value==='false'?{kpssScore:'',kpssScoreType:''}:{}),...(['kpssScore','kpssScoreType'].includes(key)&&value?{kpssRequired:'true'}:{})}));}
-  const [data, setData] = useState<{items: any[]; pages: number}>({items: [], pages: 0});
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  useEffect(() => {
-    const controller = new AbortController();
-    let active = true;
-    setLoading(true); setError('');setData({items:[],pages:0});
-    Promise.resolve().then(async () => {
-      const extra=Object.entries(filters).filter(([key,v])=>key!=='applicationView'&&v.trim()).map(([k,v])=>`${k}=${encodeURIComponent(v.trim())}`).join('&');
-      const result = await announcementRequest(`/announcements?view=${archive ? 'archive' : filters.applicationView||'open'}&q=${encodeURIComponent(q)}&page=${page}&${extra}`,controller.signal);
-      if (active) setData(result);
-    }).catch(e => { if (active) setError(e.name === 'AbortError' ? 'İstek zaman aşımına uğradı.' : e.message); })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; controller.abort(); };
-  }, [archive, q, page, reload,filters]);
-  const button = (label: string, action: () => void) => <Pressable accessibilityRole="button" onPress={action} style={{padding: 14}}><Text style={{color: '#2855AB'}}>{label}</Text></Pressable>;
-  return <SafeAreaView edges={['bottom']} style={{flex: 1, backgroundColor: '#F3F6FB', padding: 16}}>
-    <Text style={{fontSize: 26, fontWeight: '800'}}>Kamu İlanları</Text>
-    {button(archive ? 'Güncel ilanlara geç' : 'Geçmiş ilan arşivi', () => {setArchive(!archive); setPage(1);})}
-    <TextInput accessibilityLabel="İlan ara" placeholder="Kurum, başlık veya kadro ara" value={q} onChangeText={value => {setQ(value); setPage(1);}} style={{backgroundColor: 'white', padding: 14, borderRadius: 12}} />
-    {button(showFilters?'Filtreleri gizle':'Kadro ve başvuru filtreleri',()=>setShowFilters(!showFilters))}
-    {loading && <ActivityIndicator accessibilityLabel="Yükleniyor" />}
-    {error && <View><Text accessibilityRole="alert">{error}</Text>{button('Tekrar dene', () => setReload(reload + 1))}</View>}{<FlatList
-      data={loading || error ? [] : data.items} keyExtractor={item => item.id} refreshing={loading} onRefresh={() => setReload(reload + 1)}
-      ListHeaderComponent={showFilters?<View style={{gap:8,padding:8}}>
-        <Text>Başvuru durumu</Text><View style={{flexDirection:'row',flexWrap:'wrap'}}>{[['open','Başvurusu açık'],['upcoming','Yakında'],['date-unverified','Tarihi doğrulanmamış'],['all','Tüm yayımlananlar']].map(([value,label])=><Pressable key={value} accessibilityRole="button" accessibilityState={{selected:(draftFilters.applicationView||'open')===value}} onPress={()=>filter('applicationView',value)} style={{padding:10}}><Text>{label}</Text></Pressable>)}</View>
-        <Text>KPSS şartı</Text><View style={{flexDirection:'row'}}>{[['','Tümü'],['true','KPSS gerekli'],['false',"KPSS’siz (doğrulanmış)"]].map(([value,label])=><Pressable key={value} accessibilityRole="button" accessibilityState={{selected:(draftFilters.kpssRequired||'')===value}} onPress={()=>filter('kpssRequired',value)} style={{padding:10}}><Text>{label}</Text></Pressable>)}</View>
-        <Text>İstihdam türü</Text><View style={{flexDirection:'row',flexWrap:'wrap'}}>{[['','Tümü'],['CIVIL_SERVANT','Memur'],['CONTRACTED','Sözleşmeli'],['WORKER','İşçi'],['ACADEMIC','Akademik']].map(([value,label])=><Pressable key={value} accessibilityRole="button" accessibilityState={{selected:(draftFilters.employmentType||'')===value}} onPress={()=>filter('employmentType',value)} style={{padding:10}}><Text>{label}</Text></Pressable>)}</View>
-        <Text>Eğitim düzeyi</Text><View style={{flexDirection:'row',flexWrap:'wrap'}}>{[['','Tümü'],['LISANS','Lisans'],['ONLISANS','Önlisans'],['ORTAOGRETIM','Ortaöğretim']].map(([value,label])=><Pressable key={value} accessibilityRole="button" accessibilityState={{selected:(draftFilters.educationLevel||'')===value}} onPress={()=>filter('educationLevel',value)} style={{padding:10,backgroundColor:(draftFilters.educationLevel||'')===value?'#DCE8FF':'white'}}><Text>{label}</Text></Pressable>)}</View>
-        <Text>KPSS puan türü</Text><View style={{flexDirection:'row'}}>{['','P3','P93','P94'].map(value=><Pressable key={value} accessibilityRole="button" accessibilityState={{selected:(draftFilters.kpssScoreType||'')===value}} onPress={()=>filter('kpssScoreType',value)} style={{padding:10,backgroundColor:(draftFilters.kpssScoreType||'')===value?'#DCE8FF':'white'}}><Text>{value||'Tümü'}</Text></Pressable>)}</View>
-        {[['kpssScore','KPSS puanınız'],['degreeCode','Doğrulanmış mezuniyet bölüm kodu'],['city','Şehir'],['organization','Kurum'],['positionTitle','Kadro unvanı'],['deadlineBefore','Son başvuru en geç (YYYY-AA-GG)']].map(([key,label])=><TextInput key={key} accessibilityLabel={label} placeholder={label} value={draftFilters[key]||''} onChangeText={value=>filter(key,value)} keyboardType={key==='kpssScore'?'decimal-pad':'default'} style={{backgroundColor:'white',padding:12,borderRadius:8}}/>)}
-        <Text>Filtreler uygunluk kararı değildir. Eksik veya doğrulanmamış bölüm şartları eşleşme sayılmaz.</Text>{button('Filtreleri uygula',()=>{setFilters({...draftFilters});setPage(1);})}{button('Filtreleri temizle',()=>{setDraftFilters({});setFilters({});setPage(1);})}
-      </View>:null}
-      ListEmptyComponent={!loading && !error ? <Text style={{padding: 20}}>Bu görünümde yayımlanmış ilan bulunmuyor.</Text> : null}
-      renderItem={({item}) => <View style={{backgroundColor: 'white', padding: 18, marginTop: 12, borderRadius: 14}}>
-        <Text style={{color: '#50627D'}}>{item.organization}</Text><Text style={{fontSize: 18, fontWeight: '700', marginVertical: 8}}>{item.title}</Text>
-        <Text>{item.city || 'Şehir belirtilmemiş'} · {item.positionTitle || 'Kadro belirtilmemiş'}</Text>
-        <Text>Kontenjan: {item.quota ?? 'Belirtilmemiş'}</Text>
-        <Text>Son başvuru: {item.applicationEndAt ? new Date(item.applicationEndAt).toLocaleString('tr-TR', {timeZone: 'Europe/Istanbul'}) : 'Doğrulanmamış'}</Text>
-        <Link href={{pathname: '/announcement/[id]', params: {id: item.id}}} style={{paddingVertical: 12, color: '#2855AB'}}>İlan detayları →</Link>
-      </View>} />}
-    <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>{page > 1 && button('Önceki', () => setPage(page - 1))}<Text>Sayfa {page}</Text>{page < data.pages && button('Sonraki', () => setPage(page + 1))}</View>
-    <Text style={{fontSize: 11, color: '#50627D'}}>KadroRadar bağımsız bir kamu kariyer bilgilendirme uygulamasıdır. Herhangi bir kamu kurumunun resmî uygulaması değildir. Başvurular ilgili kurumların resmî platformlarından yapılır.</Text>
-  </SafeAreaView>;
+import {announcementStatus,dateText,errorText,type Announcement} from '../lib/presentation';
+import {Badge,Button,Card,Chip,EmptyState,ErrorState,Field,FilterPanel,Heading,Independence,Notice,OfficialLink,Pagination,SkeletonCards} from '../ui/components';
+import {ui} from '../ui/theme';
+export default function Announcements(){
+ const list=useRef<FlatList<Announcement>>(null);
+ const [view,setView]=useState('open'),[q,setQ]=useState(''),[page,setPage]=useState(1),[reload,setReload]=useState(0);
+ const [filters,setFilters]=useState<Record<string,string>>({}),[draft,setDraft]=useState<Record<string,string>>({});
+ const [data,setData]=useState<{items:Announcement[];pages:number}>({items:[],pages:0}),[loading,setLoading]=useState(true),[error,setError]=useState('');
+ const filter=(key:string,value:string)=>setDraft(current=>({...current,[key]:value,...(key==='kpssRequired'&&value==='false'?{kpssScore:'',kpssScoreType:''}:{}),...(['kpssScore','kpssScoreType'].includes(key)&&value?{kpssRequired:'true'}:{})}));
+ useEffect(()=>{const controller=new AbortController();let active=true;setLoading(true);setError('');setData({items:[],pages:0});
+  const timer=setTimeout(async()=>{try{const search=new URLSearchParams({view,q,page:String(page),limit:'20'});for(const [key,value] of Object.entries(filters))if(value.trim())search.set(key,value.trim());const result=await announcementRequest('/announcements?'+search,controller.signal);if(active)setData(result);}catch(e){if(active&&!controller.signal.aborted)setError(errorText(e));}finally{if(active)setLoading(false);}},300);
+  return()=>{active=false;controller.abort();clearTimeout(timer);};
+ },[view,q,page,reload,filters]);
+ const options=(label:string,key:string,values:string[][])=><View style={{gap:8}}><Text style={ui.label}>{label}</Text><View style={ui.row}>{values.map(([value,title])=><Chip key={value} label={title} selected={(draft[key]||'')===value} onPress={()=>filter(key,value)}/>)}</View></View>;
+ return <View style={ui.root}><FlatList ref={list} data={data.items} keyExtractor={item=>item.id} contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled" refreshing={loading} onRefresh={()=>setReload(k=>k+1)} initialNumToRender={6}
+  ListHeaderComponent={<View style={{gap:16}}><Heading title="Bir sonraki adımını keşfet." description="Resmî kaynaklardan doğrulanan temel ilan bilgileri. Başvuru her zaman kurumun kendi platformunda."/>
+   <View style={ui.row}>{[['open','Güncel'],['upcoming','Yakında'],['archive','Arşiv']].map(([value,label])=><Chip key={value} label={label} selected={view===value} onPress={()=>{setView(value);setPage(1);}}/>)}</View>
+   <Field label="İlan ara" placeholder="Kurum, unvan veya kadro" value={q} onChangeText={value=>{setQ(value);setPage(1);}} returnKeyType="search"/>
+   <FilterPanel activeCount={Object.values(filters).filter(Boolean).length}>
+    <Text style={ui.heading}>İlan filtreleri</Text>
+    {options('Eğitim düzeyi','educationLevel',[['','Tümü'],['LISANS','Lisans'],['ONLISANS','Önlisans'],['ORTAOGRETIM','Ortaöğretim']])}
+    {options('KPSS şartı','kpssRequired',[['','Tümü'],['true','Gerekli'],['false','Aranmıyor · doğrulanmış']])}
+    {options('Puan türü','kpssScoreType',[['','Tümü'],['P3','P3'],['P93','P93'],['P94','P94']])}
+    {options('İstihdam türü','employmentType',[['','Tümü'],['CIVIL_SERVANT','Memur'],['CONTRACTED','Sözleşmeli'],['WORKER','İşçi'],['ACADEMIC','Akademik']])}
+    {[['kpssScore','KPSS puanın'],['degreeCode','Doğrulanmış bölüm kodu'],['city','Şehir'],['organization','Kurum'],['positionTitle','Kadro unvanı'],['deadlineBefore','Son başvuru en geç (YYYY-AA-GG)']].map(([key,label])=><Field key={key} label={label} value={draft[key]||''} onChangeText={value=>filter(key,value)} keyboardType={key==='kpssScore'?'decimal-pad':'default'}/>)}
+    <Notice>Filtre sonuçları uygunluk kararı değildir. Belirsiz koşullar doğrulanmış kabul edilmez.</Notice>
+    <Button title="Filtreleri uygula" onPress={()=>{setFilters({...draft});setPage(1);}}/><Button title="Temizle" variant="ghost" onPress={()=>{setDraft({});setFilters({});setPage(1);}}/>
+   </FilterPanel>
+   {error?<ErrorState message={error} onRetry={()=>setReload(k=>k+1)}/>:loading?<SkeletonCards/>:null}
+  </View>}
+  ListEmptyComponent={!loading&&!error?<EmptyState icon="megaphone-outline" title={view==='archive'?'Arşivde gösterilecek ilan yok':q||Object.values(filters).some(Boolean)||page>1?'Bu görünümde ilan yok':'Yeni fırsatlar burada buluşacak'} description={q||Object.values(filters).some(Boolean)||page>1?'Filtrelerini değiştirebilir veya önceki sayfalara dönebilirsin.':'Resmî kaynaklardan doğrulanıp yayımlanan ilanlar burada listelenecek. Bu sırada geçmiş atamaları inceleyebilirsin.'} action={{title:'Geçmiş atamalara göz at',onPress:()=>router.push('/historical')}}/>:null}
+  renderItem={({item})=><Card><Badge text={announcementStatus(item)} tone={announcementStatus(item)==='Başvuru açık'?'success':'neutral'}/><Text style={ui.muted}>{item.organization}</Text><Text style={ui.heading}>{item.title}</Text><Text style={ui.body}>{item.positionTitle||'Kadro bilgisi detayda'} · {item.city||'Şehir belirtilmemiş'}</Text><Text style={ui.muted}>Kontenjan: {item.quota??'Belirtilmemiş'}</Text><Text style={ui.label}>Son başvuru · {dateText(item.applicationEndAt)}</Text><Button title="İlanı incele" icon="arrow-forward-outline" onPress={()=>router.push({pathname:'/announcement/[id]',params:{id:item.id}})}/><OfficialLink url={item.sourceUrl}/></Card>}
+  ListFooterComponent={<View style={{gap:12}}><Pagination page={page} pages={data.pages} loading={loading} onChange={value=>{setPage(value);list.current?.scrollToOffset({offset:0,animated:false});}}/><Independence/></View>}
+ /></View>;
 }

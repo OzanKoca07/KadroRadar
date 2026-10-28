@@ -1,5 +1,6 @@
+require('../../infra/register-mobile-typescript.cjs');
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),ts=require('typescript'),Module=require('node:module');
-const filename=path.resolve(__dirname,'../mobile/lib/announcement-api.ts'),loaded=new Module(filename,module);loaded._compile(ts.transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,filename);
+const filename=path.resolve(__dirname,'../mobile/lib/announcement-api.ts'),loaded={exports:require(filename)};
 const {announcementRequest}=loaded.exports;
 (async()=>{const saved=global.fetch,base=process.env.EXPO_PUBLIC_API_URL,timer=global.setTimeout;try{
  delete process.env.EXPO_PUBLIC_API_URL;await assert.rejects(announcementRequest('/announcements'),/yapılandırılmamış/);process.env.EXPO_PUBLIC_API_URL='https://kadroradar.onrender.com/api/v1';

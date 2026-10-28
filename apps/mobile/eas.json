@@ -1,4 +1,3 @@
-
 {
   "cli": {
     "version": ">= 16.0.0",
@@ -9,6 +8,11 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://kadroradar.onrender.com/api/v1",
+        "EXPO_PUBLIC_PRIVACY_URL": "https://kadroradar.onrender.com/privacy",
+        "EXPO_PUBLIC_ACCOUNT_DELETION_URL": "https://kadroradar.onrender.com/delete-account"
       }
     },
     "production": {
