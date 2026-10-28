@@ -1,5 +1,7 @@
 # Android preview doğrulaması — 28 Ekim 2026
 
+> Sonraki GitHub release/CI sonucu ve Render deployment adımları: [Backend release ve Android preview](BACKEND_RELEASE_AND_ANDROID_PREVIEW.md). Bu belge önceki hazırlık çalışmasının kaydıdır.
+
 Yerel ilan API hatası giderildi; preview yapılandırması ve Android JavaScript/Hermes export doğrulandı. APK oluşturulmadı. Production backend için aşağıdaki iki düzeltme henüz yayımlanmadığından sürüm koşulsuz hazır değildir.
 
 ## 1. Yerel HTTP 500: kanıtlanan neden ve onaylı çözüm
