@@ -18,7 +18,7 @@ export default function PlacementDetails(){
   <Heading title={item.title} description={item.institutionRawName}/>
   <Card><Text style={ui.heading}>Yerleştirme bilgileri</Text>{[['Kadro kodu',item.positionCode],['Şehir',item.city||'Belirtilmemiş'],['Kontenjan',item.quota],['Yerleşen',item.placedCount],['Boş kontenjan',item.vacantCount],['Taban puan',scoreText(item.minScore)],['Tavan puan',scoreText(item.maxScore)]].map(([label,value])=><Fact key={String(label)} label={String(label)} value={value}/>)}</Card>
   {delta!==null&&<Card><Text style={ui.heading}>Puan karşılaştırman</Text><Text style={ui.metric}>{scoreText(number)}</Text><Text style={ui.muted}>Geçmiş taban puanın {scoreText(Math.abs(delta))} puan {delta>=0?'üzerinde':'altında'}.</Text></Card>}
-  <Notice title="Nitelik kodları doğrulanmamış">Bu kayıt geçmiş bir yerleştirmeye aittir. Nitelik kodları doğrulanmadan uygunluk kararı verilmez. Geçmiş puanın üzerinde olmak gelecekte yerleşme garantisi sağlamaz.</Notice>
+  <Notice title="Nitelik kodları doğrulanmamış">Geçmiş puanlar yerleşme garantisi değildir. Nitelik kodları doğrulanmadan uygunluk sonucu verilmez.</Notice>
   <Card><Text style={ui.heading}>Kaynak bilgisi</Text><Text style={ui.body}>{item.sourceDocument.sourceOrganization}</Text><Text style={ui.caption}>{item.sourceDocument.originalFilename} · PDF sayfa {item.sourcePage}</Text><OfficialLink url={item.sourceDocument.originalUrl} title="ÖSYM kaynak belgesine git"/></Card><Independence/>
  </>}</Screen>;
 }

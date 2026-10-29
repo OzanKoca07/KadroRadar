@@ -5,7 +5,7 @@ from source_adapters import ADAPTERS, review_many
 
 class AdaptersTests(unittest.TestCase):
     def test_registry_has_five_disabled_adapters(self):
-        self.assertEqual(set(ADAPTERS),{'gazette','sbb','career','iskur','energy'})
+        self.assertEqual(set(ADAPTERS),{'gazette','sbb','career','iskur','energy','sgk','karacadag','giresun'})
 
     def test_discovery_does_not_assign_aggregator_as_employer_or_publish(self):
         with tempfile.TemporaryDirectory() as directory:

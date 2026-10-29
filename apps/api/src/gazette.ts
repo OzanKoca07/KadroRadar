@@ -2,6 +2,7 @@ import {Body,BadRequestException,CanActivate,ConflictException,Controller,Delete
 import {FileInterceptor} from '@nestjs/platform-express';
 import {CandidateAuth,CandidateModule} from './candidate';
 import {IngestionDb} from './announcement-admin';
+import {stageCareerSnapshot} from './career-staging';
 import {Prisma} from '@prisma/client';
 import {createHash,randomUUID} from 'node:crypto';
 import {resolve,basename,join} from 'node:path';
@@ -47,7 +48,7 @@ export class GazetteController implements OnModuleDestroy {
  @Post('source-reviews/:sourceId')
  @UseInterceptors(GazetteCapacity,FileInterceptor('file',{limits:{fileSize:MAX_BYTES,files:1,fields:1}}))
  async reviewSource(@Param('sourceId') sourceId:string,@UploadedFile() file:any,@Body() body:any){
-  if(!['gazette','sbb','career','iskur','energy'].includes(sourceId)||!file?.buffer||typeof body?.sourceUrl!=='string'||body.sourceUrl.length>2048)throw new BadRequestException('Registered source and document required');
+  if(!['gazette','sbb','career','iskur','energy','sgk','karacadag','giresun'].includes(sourceId)||!file?.buffer||typeof body?.sourceUrl!=='string'||body.sourceUrl.length>2048)throw new BadRequestException('Registered source and document required');
   if(file.buffer.length>(file.buffer.subarray(0,5).toString()==='%PDF-'?MAX_BYTES:2_000_000))throw new BadRequestException('Document too large');
   await mkdir(storage(),{recursive:true,mode:0o700});await this.purge();await this.checkQuota(file.buffer.length);
   const temporary=join(storage(),randomUUID()+'.tmp');await writeFile(temporary,file.buffer,{flag:'wx',mode:0o600});
@@ -60,6 +61,12 @@ export class GazetteController implements OnModuleDestroy {
    const doc=await this.db.sourceDocument.create({data:{sha256:sha,originalUrl:body.sourceUrl,originalFilename:'official-source-document',sourceOrganization:report.sourceOrganization,state:'OFFICIAL_SOURCE_REVIEW',gazetteEvidence:report}});
    return {documentId:doc.id,duplicate:false,report,announcementRowsCreated:0};
   }finally{await unlink(temporary).catch(()=>{});}
+ }
+ @Post('source-reviews/:id/stage-career')
+ async stageCareer(@Param('id') id:string,@Req() req:any){
+  const document=await this.db.sourceDocument.findFirst({where:{id,state:'OFFICIAL_SOURCE_REVIEW'}}),report=document?.gazetteEvidence as any;
+  if(!document||report?.sourceId!=='career'||report?.format!=='RSS2'||report.documentSha256!==document.sha256)throw new BadRequestException('Reviewed career RSS document required');
+  return stageCareerSnapshot(this.db,report,req.gazetteActor.id);
  }
  @Get('source-reviews/:id/file')
  async sourceReviewFile(@Param('id') id:string,@Res() response:any){

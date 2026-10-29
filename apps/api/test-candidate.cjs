@@ -1,3 +1,4 @@
+require('./test-source-fixtures.cjs').permitManualFixtures();
 const assert=require('node:assert/strict');
 const {randomBytes}=require('node:crypto');
 require('reflect-metadata');

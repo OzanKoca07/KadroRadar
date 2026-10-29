@@ -9,6 +9,11 @@ export function scanMode(value=process.env.ANNOUNCEMENT_SCAN_MODE):ScanMode{
  if(value!=='manual'&&value!=='scheduled')throw Error('Invalid ANNOUNCEMENT_SCAN_MODE');
  return value;
 }
-export function nextScanAt(lastSuccessAt:Date|null|undefined,minIntervalSeconds=3600){
- return lastSuccessAt?new Date(lastSuccessAt.getTime()+Math.max(scanIntervalHours()*3600000,minIntervalSeconds*1000)):null;
+export function sourceScanIntervalHours(source:any){
+ if(source?.scanIntervalHours===undefined)return scanIntervalHours();
+ if(![48,96].includes(source.scanIntervalHours))throw Error('Source scan interval must be 48 or 96 hours');
+ return source.scanIntervalHours;
+}
+export function nextScanAt(lastSuccessAt:Date|null|undefined,minIntervalSeconds=3600,hours=scanIntervalHours()){
+ return lastSuccessAt?new Date(lastSuccessAt.getTime()+Math.max(hours*3600000,minIntervalSeconds*1000)):null;
 }

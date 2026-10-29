@@ -33,6 +33,8 @@ export class CandidateAuth {
 @Controller('account')
 export class CandidateController {
   constructor(private db: CandidateDb, private auth: CandidateAuth, private notifications:NotificationService) {}
+  @Get('capabilities')
+  capabilities(){return {selfRegistration:process.env.ALLOW_SELF_REGISTRATION==='true',passwordMinLength:12,passwordMaxLength:128};}
   private async rate(req:any,scope:string,limit:number){
     const key=hash(`${scope}:${req.ip || req.socket.remoteAddress || 'unknown'}`);
     const accepted=await this.db.$transaction(async tx=>{
@@ -41,12 +43,12 @@ export class CandidateController {
       const value=await tx.authRateLimit.upsert({where:{id:key},create:{id:key,count:1,until:new Date(Date.now()+15*60000)},update:{count:{increment:1}}});
       return value.count<=limit;
     });
-    if(!accepted)throw new ForbiddenException('Too many authentication attempts');
+    if(!accepted)throw new ForbiddenException({code:'AUTH_RATE_LIMITED',message:'Too many authentication attempts'});
   }
   @Post('register')
   async register(@Body() body: any,@Req() req:any) {
+    if (process.env.ALLOW_SELF_REGISTRATION !== 'true') throw new ForbiddenException({code:'REGISTRATION_DISABLED',message:'Registration disabled'});
     await this.rate(req,'register',10);
-    if (process.env.ALLOW_SELF_REGISTRATION !== 'true') throw new ForbiddenException('Registration disabled');
     const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || typeof body.password !== 'string' || body.password.length < 12 || body.password.length > 128) throw new BadRequestException('Valid email and 12–128 character password required');
     const stored = await passwordHash(body.password);
@@ -58,7 +60,7 @@ export class CandidateController {
     const now = Date.now();
     await this.rate(req,'login',10);
     const origin=req.headers.origin;
-    if(origin){const allowed=(process.env.CORS_ORIGINS||'http://localhost:5173').split(',').map(x=>x.trim());if(!allowed.includes(origin))throw new ForbiddenException('Origin rejected');}
+    if(origin){const allowed=(process.env.CORS_ORIGINS||'http://localhost:5173').split(',').map(x=>x.trim());if(!allowed.includes(origin))throw new ForbiddenException({code:'AUTH_ORIGIN_REJECTED',message:'Origin rejected'});}
     if (typeof body?.password !== 'string' || body.password.length > 128 || typeof body.email !== 'string') throw new UnauthorizedException();
     const user = await this.db.user.findUnique({where: {email: body.email.trim().toLowerCase()}});
     const valid=await passwordMatches(body.password,user?.passwordHash);

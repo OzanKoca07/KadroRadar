@@ -9,6 +9,13 @@ from source_probe import probe
 
 
 class ProbeTests(unittest.TestCase):
+    def setUp(self):
+        # Existing transport tests isolate the network phases; rights gating is tested separately.
+        patcher = patch('source_probe.require_network_permission')
+        patcher.start(); self.addCleanup(patcher.stop)
+        robots = patch('source_probe.check_robots', return_value={'status':'SYNTHETIC_ALLOWED'})
+        robots.start(); self.addCleanup(robots.stop)
+
     def run_probe(self, phase_error=None, status=200, body=b'index', length=None):
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder)/'source.html'

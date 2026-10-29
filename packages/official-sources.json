@@ -11,14 +11,20 @@
     "automationPermission": "RSS_READING_ONLY",
     "republicationPermission": "UNVERIFIED",
     "indexingPolicy": {
-      "automatedAccess": "ALLOWED",
+      "automatedAccess": "REVIEW_REQUIRED",
       "scope": "ADVERTISED_RSS_FEED_ONLY",
       "basisUrl": "https://enerji.gov.tr/rss",
       "minIntervalSeconds": 3600,
       "contentUse": "FACTS_AND_OFFICIAL_LINKS_ONLY",
       "fullDocumentPublication": "DISABLED",
       "robotsUrl": "https://enerji.gov.tr/robots.txt",
-      "assessmentNote": "Advertised RSS reading only; robots wildcard allows this feed path. Full document redistribution is outside scope."
+      "assessmentNote": "RSS reader invitation verified, but mobile/commercial reuse license not verified; stricter 2026-10-28 source policy requires separate evidence."
+    },
+    "rightsAssessment": {
+      "status": "REVIEW_REQUIRED",
+      "checkedAt": "2026-10-28",
+      "reason": "No verified license or written authorization for automated access and third-party mobile reuse.",
+      "evidence": null
     }
   },
   "sbb": {
@@ -39,6 +45,12 @@
       "minIntervalSeconds": 3600,
       "contentUse": "FACTS_AND_OFFICIAL_LINKS_ONLY",
       "fullDocumentPublication": "DISABLED"
+    },
+    "rightsAssessment": {
+      "status": "REVIEW_REQUIRED",
+      "checkedAt": "2026-10-28",
+      "reason": "No verified license or written authorization for automated access and third-party mobile reuse.",
+      "evidence": null
     }
   },
   "career": {
@@ -47,18 +59,32 @@
     "hosts": [
       "kariyerkapisi.gov.tr"
     ],
-    "feed": "https://kariyerkapisi.gov.tr/isealim",
-    "format": "html",
+    "feed": "https://kariyerkapisi.gov.tr/RSS",
+    "format": "rss",
     "enabled": false,
     "automationPermission": "UNVERIFIED",
     "republicationPermission": "UNVERIFIED",
     "indexingPolicy": {
       "automatedAccess": "REVIEW_REQUIRED",
-      "scope": "NOT_ASSESSED",
-      "basisUrl": "https://kariyerkapisi.gov.tr/isealim",
+      "scope": "RSS_METADATA_REVIEW_ONLY",
+      "basisUrl": "https://kariyerkapisi.gov.tr/RSS",
       "minIntervalSeconds": 3600,
       "contentUse": "FACTS_AND_OFFICIAL_LINKS_ONLY",
-      "fullDocumentPublication": "DISABLED"
+      "fullDocumentPublication": "DISABLED",
+      "assessmentNote": "2026-10-29 endpoint headers HTTP 200 application/xml; body not collected. User clarified there is no written authorization; mobile/commercial/automated scope remains unverified."
+    },
+    "rightsAssessment": {
+      "status": "REVIEW_REQUIRED",
+      "checkedAt": "2026-10-29",
+      "reason": "User clarified no written reply exists; a general internet opinion is not source-specific authorization. Guide covers institutional official websites; independent mobile/commercial scope requires review.",
+      "evidence": null
+    },
+    "discoveryUrl": "https://kariyerkapisi.gov.tr/RSS",
+    "designGuide": {
+      "sha256": "59d7533801849181fc28ee0c405e2e4837db78bd66173ebb51e447b540bee5de",
+      "pages": 4,
+      "scope": "INSTITUTIONAL_OFFICIAL_WEBSITES",
+      "logoPermissionVerified": false
     }
   },
   "iskur": {
@@ -80,13 +106,20 @@
       "minIntervalSeconds": 3600,
       "contentUse": "FACTS_AND_OFFICIAL_LINKS_ONLY",
       "fullDocumentPublication": "DISABLED"
+    },
+    "rightsAssessment": {
+      "status": "REVIEW_REQUIRED",
+      "checkedAt": "2026-10-28",
+      "reason": "No verified license or written authorization for automated access and third-party mobile reuse.",
+      "evidence": null
     }
   },
   "ilan": {
     "id": "ilan",
     "organization": "Basın İlan Kurumu",
     "hosts": [
-      "www.ilan.gov.tr"
+      "www.ilan.gov.tr",
+      "ilan.gov.tr"
     ],
     "feed": "https://www.ilan.gov.tr/",
     "format": "html",
@@ -94,12 +127,18 @@
     "automationPermission": "UNVERIFIED",
     "republicationPermission": "UNVERIFIED",
     "indexingPolicy": {
-      "automatedAccess": "REVIEW_REQUIRED",
+      "automatedAccess": "DISALLOWED",
       "scope": "NOT_ASSESSED",
       "basisUrl": "https://www.ilan.gov.tr/",
       "minIntervalSeconds": 3600,
       "contentUse": "FACTS_AND_OFFICIAL_LINKS_ONLY",
       "fullDocumentPublication": "DISABLED"
+    },
+    "rightsAssessment": {
+      "status": "RESTRICTED",
+      "checkedAt": "2026-10-28",
+      "reason": "USER_REPORTED_BIK_WRITTEN_RESTRICTION_NO_COLLECTION_OR_LINK_PUBLICATION",
+      "evidence": null
     }
   },
   "gazette": {
@@ -120,6 +159,12 @@
       "minIntervalSeconds": 3600,
       "contentUse": "FACTS_AND_OFFICIAL_LINKS_ONLY",
       "fullDocumentPublication": "DISABLED"
+    },
+    "rightsAssessment": {
+      "status": "REVIEW_REQUIRED",
+      "checkedAt": "2026-10-28",
+      "reason": "No verified license or written authorization for automated access and third-party mobile reuse.",
+      "evidence": null
     }
   },
   "uab": {
@@ -140,6 +185,12 @@
       "minIntervalSeconds": 3600,
       "contentUse": "FACTS_AND_OFFICIAL_LINKS_ONLY",
       "fullDocumentPublication": "DISABLED"
+    },
+    "rightsAssessment": {
+      "status": "REVIEW_REQUIRED",
+      "checkedAt": "2026-10-28",
+      "reason": "No verified license or written authorization for automated access and third-party mobile reuse.",
+      "evidence": null
     }
   },
   "osym": {
@@ -159,6 +210,94 @@
       "automatedAccess": "REVIEW_REQUIRED",
       "scope": "NOT_ASSESSED",
       "basisUrl": "https://www.osym.gov.tr/",
+      "minIntervalSeconds": 3600,
+      "contentUse": "FACTS_AND_OFFICIAL_LINKS_ONLY",
+      "fullDocumentPublication": "DISABLED"
+    },
+    "rightsAssessment": {
+      "status": "REVIEW_REQUIRED",
+      "checkedAt": "2026-10-28",
+      "reason": "No verified license or written authorization for automated access and third-party mobile reuse.",
+      "evidence": null
+    }
+  },
+  "sgk": {
+    "id": "sgk",
+    "organization": "Sosyal Güvenlik Kurumu",
+    "hosts": [
+      "sgk.gov.tr",
+      "www.sgk.gov.tr"
+    ],
+    "feed": null,
+    "discoveryUrl": "https://sgk.gov.tr/Rss",
+    "format": "rss-discovery",
+    "enabled": false,
+    "automationPermission": "UNVERIFIED",
+    "republicationPermission": "UNVERIFIED",
+    "rightsAssessment": {
+      "status": "REVIEW_REQUIRED",
+      "checkedAt": "2026-10-29",
+      "reason": "RSS advertised, but endpoint scope and third-party reuse authorization require verification.",
+      "evidence": null
+    },
+    "indexingPolicy": {
+      "automatedAccess": "REVIEW_REQUIRED",
+      "scope": "OPERATOR_SUPPLIED_DOCUMENT_ONLY",
+      "basisUrl": "https://sgk.gov.tr/Rss",
+      "minIntervalSeconds": 3600,
+      "contentUse": "FACTS_AND_OFFICIAL_LINKS_ONLY",
+      "fullDocumentPublication": "DISABLED"
+    }
+  },
+  "karacadag": {
+    "id": "karacadag",
+    "organization": "Karacadağ Kalkınma Ajansı",
+    "hosts": [
+      "www.karacadag.gov.tr"
+    ],
+    "feed": null,
+    "discoveryUrl": "https://www.karacadag.gov.tr/",
+    "format": "rss-discovery",
+    "enabled": false,
+    "automationPermission": "UNVERIFIED",
+    "republicationPermission": "UNVERIFIED",
+    "rightsAssessment": {
+      "status": "REVIEW_REQUIRED",
+      "checkedAt": "2026-10-29",
+      "reason": "RSS advertised, but endpoint scope and third-party reuse authorization require verification.",
+      "evidence": null
+    },
+    "indexingPolicy": {
+      "automatedAccess": "REVIEW_REQUIRED",
+      "scope": "OPERATOR_SUPPLIED_DOCUMENT_ONLY",
+      "basisUrl": "https://www.karacadag.gov.tr/",
+      "minIntervalSeconds": 3600,
+      "contentUse": "FACTS_AND_OFFICIAL_LINKS_ONLY",
+      "fullDocumentPublication": "DISABLED"
+    }
+  },
+  "giresun": {
+    "id": "giresun",
+    "organization": "Giresun Üniversitesi Eğitim Bilimleri Bölümü",
+    "hosts": [
+      "ebb.giresun.edu.tr"
+    ],
+    "feed": null,
+    "discoveryUrl": "https://ebb.giresun.edu.tr/rss",
+    "format": "rss-discovery",
+    "enabled": false,
+    "automationPermission": "UNVERIFIED",
+    "republicationPermission": "UNVERIFIED",
+    "rightsAssessment": {
+      "status": "REVIEW_REQUIRED",
+      "checkedAt": "2026-10-29",
+      "reason": "RSS advertised, but endpoint scope and third-party reuse authorization require verification.",
+      "evidence": null
+    },
+    "indexingPolicy": {
+      "automatedAccess": "REVIEW_REQUIRED",
+      "scope": "OPERATOR_SUPPLIED_DOCUMENT_ONLY",
+      "basisUrl": "https://ebb.giresun.edu.tr/rss",
       "minIntervalSeconds": 3600,
       "contentUse": "FACTS_AND_OFFICIAL_LINKS_ONLY",
       "fullDocumentPublication": "DISABLED"

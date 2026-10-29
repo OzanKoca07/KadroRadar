@@ -1,3 +1,4 @@
+require('./test-source-fixtures.cjs').permitManualFixtures();
 const assert=require('node:assert/strict');const fs=require('node:fs/promises');const path=require('node:path');const {execFileSync}=require('node:child_process');const {randomBytes,createHash}=require('node:crypto');require('reflect-metadata');
 if(!process.env.DATABASE_URL?.includes('/kadroradar_ingestion_test_'))throw Error('Isolated database required');
 process.env.NOTIFICATIONS_ENABLED='false';process.env.NODE_ENV='production';

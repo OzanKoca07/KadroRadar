@@ -1,6 +1,7 @@
+const {licensed}=require('./test-source-fixtures.cjs');
 const assert=require('node:assert/strict'),{automaticIndexingAllowed,indexingAssessment}=require('./dist/source-indexing-policy'),{adapterStatus}=require('./dist/source-adapter-contract'),{publicAnnouncement}=require('./dist/public-announcement'),registry=require('../../packages/official-sources.json');
 assert.equal(automaticIndexingAllowed(registry.energy),false);
-assert.equal(automaticIndexingAllowed({...registry.energy,enabled:true,republicationPermission:'UNVERIFIED'}),true);
+assert.equal(automaticIndexingAllowed({...registry.energy,enabled:true,republicationPermission:'UNVERIFIED'}),false);
 assert.equal(automaticIndexingAllowed({...registry.energy,enabled:true,indexingPolicy:{automatedAccess:'DISALLOWED'}}),false);
 assert.equal(indexingAssessment({}).automatedAccess,'REVIEW_REQUIRED');
 assert.equal(adapterStatus(registry.sbb).reason,'ACCESS_ASSESSMENT_REQUIRED');

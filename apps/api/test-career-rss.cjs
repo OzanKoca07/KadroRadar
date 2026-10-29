@@ -1,0 +1,44 @@
+// No real users/sessions or source network. Requires a dedicated isolated PG16 database.
+require('reflect-metadata');
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),{randomBytes}=require('node:crypto');
+const {PrismaClient}=require('@prisma/client'),{NestFactory}=require('@nestjs/core');
+const target=new URL(process.env.DATABASE_URL||'postgresql://invalid/invalid');
+if(!['127.0.0.1','localhost','db','[::1]'].includes(target.hostname)||!/^\/kadroradar_ingestion_test_/.test(target.pathname))throw Error('Isolated database required');
+const registry=require('../../packages/official-sources.json'),{licensed}=require('./test-source-fixtures.cjs');
+const {SourceOperations}=require('./dist/source-operations'),{stageCareerSnapshot,careerRowId}=require('./dist/career-staging'),{AnnouncementAdminController}=require('./dist/announcement-admin'),{AppModule}=require('./dist/module');
+const original=structuredClone(registry.career),suffix=randomBytes(5).toString('hex'),checks=[];
+const auth={role:async(req,roles,mutate)=>{assert.ok(roles.includes(req.fixtureRole));if(mutate)assert.equal(req.fixtureCsrf,true);return {id:'SYNTHETIC-career-editor'};}};
+const req={headers:{},fixtureRole:'SYSTEM_ADMIN',fixtureCsrf:true};
+const fixture=fs.readFileSync('../../services/ingest/fixtures/career-synthetic.xml','utf8');
+function parse(text=fixture){const file=path.resolve('../../.local/kariyer','fixture-'+suffix+'.xml');fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,text);try{return JSON.parse(cp.execFileSync('python',[path.resolve('../../services/ingest/career_rss.py'),'--fixture',file],{encoding:'utf8',stdio:'pipe',windowsHide:true}));}finally{fs.unlinkSync(file);}}
+function pass(s){checks.push(s);console.log('PASS '+s);}
+(async()=>{const db=new PrismaClient();let app;try{
+ const users=await db.user.count(),sessions=await db.candidateSession.count(),announcementsBefore=await db.announcement.count();let calls=0;
+ const ops=new SourceOperations(db,auth),admin=new AnnouncementAdminController(db,auth),report=parse();
+ await assert.rejects(ops.run('career',async()=>{calls++;return report}));assert.equal(calls,0);pass('unverified real registry stops before adapter/network');
+ Object.assign(registry.career,licensed(registry.career));let now=new Date();const clock={now:()=>new Date(now)},output={...report,downloaded:true,transport:{etag:'SYNTHETIC',knownGuids:report.rows.map(r=>r.guidHash)}};
+ let result=await ops.run('career',async()=>output,clock);assert.equal(result.created,1);assert.equal(result.queued,3);assert.equal(await db.announcement.count(),announcementsBefore);
+ const id=careerRowId(report.rows[0].guidHash);let row=await db.announcementImportRow.findUniqueOrThrow({where:{id}});assert.equal(row.parsed.organization,null);assert.equal(row.parsed.applicationEndAt,null);
+ assert.equal((await ops.run('career',async()=>{throw Error('not due')},clock)).status,'NOT_DUE');now=new Date(+now+96*3600000);assert.equal((await ops.run('career',async()=>output,clock)).duplicate,1);pass('96h due + GUID staging idempotence; internal/education/placement stay out of Announcement');
+ const docs=await db.sourceDocument.count();now=new Date(+now+96*3600000);const unchanged=await ops.run('career',async()=>({...output,rows:[],notModified:true,downloaded:false}),clock);assert.equal(unchanged.created,0);assert.equal(await db.sourceDocument.count(),docs);assert.equal(await db.announcementImportRow.count({where:{id:{startsWith:'career-rss-'}}}),1);pass('304 creates no source document, candidate or disappearance signal');
+ await assert.rejects(admin.review(id,req,{version:row.version,action:'APPROVE',sourceVerified:true,evidence:'SYNTHETIC source checked only'}));
+ const fields={...row.parsed,organization:'SYNTHETIC employer verified by editor',applicationStartAt:new Date(Date.now()-86400000).toISOString(),applicationEndAt:new Date(Date.now()+30*86400000).toISOString()};
+ await assert.rejects(admin.review(id,req,{version:row.version,action:'APPROVE',sourceVerified:true,fields,evidence:'SYNTHETIC editor conditions'}));
+ await admin.review(id,req,{version:row.version,action:'APPROVE',sourceVerified:true,careerDetailsVerified:true,fields,evidence:'SYNTHETIC official details and employer verified'});row=await db.announcementImportRow.findUniqueOrThrow({where:{id}});
+ const published=await admin.review(id,req,{version:row.version,action:'PUBLISH'});row=await db.announcementImportRow.findUniqueOrThrow({where:{id}});
+ await assert.rejects(admin.homeNews(req,id,{version:row.version,enabled:true,indexPermissionReviewed:true,sourceVerified:true,evidence:'SYNTHETIC source review without editor summary'}));
+ await admin.homeNews(req,id,{version:row.version,enabled:true,indexPermissionReviewed:true,sourceVerified:true,editorSummary:'SYNTHETIC editor summary for isolated career test.',evidence:'SYNTHETIC editor metadata and licensing checked'});pass('unknown dates/employer block approval; explicit editor review/publish and original news summary');
+ app=await NestFactory.create(AppModule,{logger:false});app.setGlobalPrefix('api/v1');await app.listen(0,'127.0.0.1');const base=await app.getUrl()+'/api/v1';
+ let response=await fetch(base+'/announcements?view=open&q='+encodeURIComponent(report.rows[0].title));assert.equal(response.status,200);const publicRow=(await response.json()).items.find(x=>x.id===published.announcementId);assert.ok(publicRow);assert.equal(publicRow.sourceEvidence.categoryCode,'PERSONNEL');assert.equal(publicRow.sourceEvidence.sourceId,'career');
+ require('../../infra/register-mobile-typescript.cjs');const facts=require('../mobile/lib/career-card.ts').careerCardFacts(publicRow);assert.ok(facts);assert.equal(facts.organization,fields.organization);
+ response=await fetch(base+'/announcements/news');const news=await response.json();assert.ok(require('../mobile/lib/news.ts').reviewedNews(news).some(x=>x.id===publicRow.id));assert.ok(!JSON.stringify(news).includes('invalid.example'));pass('actual public HTTP and mobile contracts with no enclosure/image or raw description');
+ const missing=await stageCareerSnapshot(db,{...report,rows:[],missingGuids:[report.rows[0].guidHash]},'SYNTHETIC');assert.equal(missing.missingReview,1);assert.equal((await db.announcement.findUniqueOrThrow({where:{id:publicRow.id}})).status,'PUBLISHED');assert.equal((await db.announcement.findUniqueOrThrow({where:{id:publicRow.id}})).sourceCheckedAt,null);
+ assert.equal((await (await fetch(base+'/announcements?view=open&q='+encodeURIComponent(report.rows[0].title))).json()).items.length,0);assert.ok(!(await (await fetch(base+'/announcements/news')).json()).items.some(item=>item.id===publicRow.id));
+ assert.equal((await stageCareerSnapshot(db,report,'SYNTHETIC')).changed,1);pass('disappearance invalidates verification, never auto-cancels; reappearance requires review');
+ const revised=parse(fixture.replace('synthetic-001?utm_source=test','synthetic-001-new?utm_source=test').replace('personel alımı','personel alımı süre uzatıldı'));
+ assert.equal((await stageCareerSnapshot(db,revised,'SYNTHETIC')).changed,1);row=await db.announcementImportRow.findUniqueOrThrow({where:{id}});assert.ok(row.sourceUrl.endsWith('synthetic-001-new'));
+ await assert.rejects(admin.review(id,req,{version:row.version,action:'APPROVE',fields:{...fields,sourceUrl:row.sourceUrl},careerDetailsVerified:true,sourceVerified:true,evidence:'SYNTHETIC title extension is insufficient'}));
+ await admin.review(id,req,{version:row.version,action:'WITHDRAW',evidence:'SYNTHETIC explicit reviewed withdrawal'});assert.equal((await db.announcement.findUniqueOrThrow({where:{id:publicRow.id}})).status,'WITHDRAWN');pass('GUID survives canonical URL changes; extension title cannot publish; explicit withdrawal works');
+ const policy=await ops.rights.review(registry.career,{status:'REVIEW_REQUIRED',reason:'SYNTHETIC rights revoked for isolated policy test',expectedRevision:null},'SYNTHETIC');assert.equal(policy.effectiveStatus,'REVIEW_REQUIRED');await assert.rejects(ops.run('career',async()=>output,clock));assert.equal(await db.user.count(),users);assert.equal(await db.candidateSession.count(),sessions);pass('runtime revocation and unchanged user/session counts');
+ fs.writeFileSync('../../.local/kariyer/isolated-flow.json',JSON.stringify({source:'SYNTHETIC_ONLY',checks,liveDownloaded:0,productionWrites:0,usersCreated:0},null,2));
+}finally{if(app)await app.close();Object.assign(registry.career,original);await db.$disconnect();}})().catch(e=>{console.error(JSON.stringify({event:'CAREER_RSS_TEST_FAILED',kind:e.name,reason:e.name==='AssertionError'?e.message.slice(0,150):undefined}));process.exitCode=1;});

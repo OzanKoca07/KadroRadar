@@ -4,6 +4,9 @@ const assert=require('node:assert/strict'),{execFileSync}=require('node:child_pr
 const root=path.resolve(__dirname,'..'),suffix=randomBytes(6).toString('hex'),prefix='kadroradar-render-test-'+suffix;
 const db=prefix+'-db',api=prefix+'-api',network=prefix+'-net',database='kadroradar_ingestion_test_render_'+suffix,password=randomBytes(24).toString('hex');
 const image=process.env.RENDER_TEST_IMAGE||'kadroradar-api:rc1',url=`postgresql://fixture:${password}@db:5432/${database}?connect_timeout=2&pool_timeout=2&connection_limit=3`;
+// A pending fetch/AbortSignal timeout alone may not keep Node alive after
+// synchronous Docker calls. Never exit zero before assertions and cleanup run.
+const keepAlive=setInterval(()=>{},1000);
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 function docker(...args){return execFileSync('docker',args,{encoding:'utf8',timeout:120000,windowsHide:true}).trim();}
 function sql(statement){return docker('exec',db,'psql','-U','fixture','-d',database,'-At','-c',statement);}
@@ -26,6 +29,8 @@ async function cli(args,env=[]){return docker('exec',...env.flatMap(([key,value]
  const settings=JSON.parse(docker('exec',api,'node','-e',"console.log(JSON.stringify(Object.fromEntries(['NODE_ENV','DOCUMENT_UPLOADS_ENABLED','SOURCE_SYNC_ENABLED','NOTIFICATIONS_ENABLED','ALLOW_SELF_REGISTRATION'].map(k=>[k,process.env[k]]))))"));
  assert.equal(settings.NODE_ENV,'production');for(const flag of ['DOCUMENT_UPLOADS_ENABLED','SOURCE_SYNC_ENABLED','NOTIFICATIONS_ENABLED','ALLOW_SELF_REGISTRATION'])assert.equal(settings[flag],'false');
  checks.push('production image defaults: all four Free-sensitive features disabled');
+ const capability=await request('/api/v1/account/capabilities');assert.equal(capability.status,200);assert.equal((await capability.json()).selfRegistration,false);
+ checks.push('current account capability route available; registration remains disabled');
  for(const route of ['/admin/','/privacy','/delete-account','/legal/legal.js','/legal/legal.css','/legal/public-config.js'])assert.equal((await request(route)).status,200,route);
  const admin=await(await request('/admin/')).text(),asset=admin.match(/src="([^"]+\.js)"/)?.[1];assert.ok(asset?.startsWith('/admin/assets/'));const bundle=await(await request(asset)).text();assert.ok(bundle.includes('/api/v1'));assert.ok(!bundle.includes('http://localhost:3000/api/v1'));
  checks.push('admin/legal pages and assets served; admin uses relative production API');
@@ -39,6 +44,7 @@ async function cli(args,env=[]){return docker('exec',...env.flatMap(([key,value]
  phase='empty API';
  for(const route of ['/announcements','/announcements/archive','/announcements?view=all','/historical/placements','/historical/placements?educationLevel=BACHELOR','/historical/placements?educationLevel=ASSOCIATE','/historical/placements?educationLevel=HIGH_SCHOOL']){const response=await request('/api/v1'+route);assert.equal(response.status,200,route);const body=await response.json();assert.equal(body.total,0);assert.deepEqual(body.items,[]);}
  const rounds=await request('/api/v1/historical/rounds');assert.deepEqual(await rounds.json(),[]);
+ const news=await request('/api/v1/announcements/news');assert.equal(news.status,200);assert.deepEqual((await news.json()).items,[]);
  const filters=await request('/api/v1/announcements/filters');assert.deepEqual(await filters.json(),{cities:[],organizations:[],educationLevels:[]});
  assert.equal((await request('/api/v1/announcements/missing')).status,404);
  assert.equal((await request('/api/v1/admin/announcement-imports')).status,401);
@@ -58,9 +64,10 @@ async function cli(args,env=[]){return docker('exec',...env.flatMap(([key,value]
  const unavailable=await request('/api/v1/health');assert.equal(unavailable.status,503);const error=await unavailable.json();assert.equal(error.message,'Database unavailable');assert.ok(!JSON.stringify(error).includes(password));
  checks.push('stopped isolated PostgreSQL: health503, generic error, no connection secret leak');
  phase='database recovery';docker('start',db);await healthy();checks.push('PostgreSQL recovery: health200');
- const report={date:'2026-10-26',status:'PASS',image:docker('image','inspect',image,'--format','{{.Id}}'),checks,realDatabaseTouched:false,productionDeployed:false};
+ const report={date:new Date().toISOString(),status:'PASS',image:docker('image','inspect',image,'--format','{{.Id}}'),checks,realDatabaseTouched:false,productionDeployed:false};
  fs.mkdirSync(path.join(root,'.local/release'),{recursive:true});fs.writeFileSync(path.join(root,'.local/release/render-readiness.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
 }finally{
  for(const name of [api,db])try{docker('rm','-f',name);}catch{}
  try{docker('network','rm',network);}catch{}
+ clearInterval(keepAlive);
 }})().catch(error=>{console.error(error.message?.replaceAll(password,'[REDACTED]'));process.exitCode=1;});

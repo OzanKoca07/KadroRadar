@@ -1,3 +1,4 @@
+const {licensed}=require('./test-source-fixtures.cjs');
 const assert=require('node:assert/strict');require('reflect-metadata');
 if(!process.env.DATABASE_URL?.includes('/kadroradar_ingestion_test_'))throw Error('Disposable DB required');
 const {PrismaClient}=require('@prisma/client'),{SourceOperations}=require('./dist/source-operations'),{scanIntervalHours}=require('./dist/announcement-scan'),registry=require('../../packages/official-sources.json');
@@ -7,7 +8,7 @@ const advance=hours=>{now=new Date(now.getTime()+hours*3600000)};
 try{
  delete process.env.ANNOUNCEMENT_SCAN_INTERVAL_HOURS;assert.equal(scanIntervalHours(),96);for(const v of ['0','-1','1.5','bad','8761'])assert.throws(()=>scanIntervalHours(v));
  await assert.rejects(()=>ops.run('energy',adapter,context));assert.equal(calls,0);
- Object.assign(registry.energy,{enabled:true});await db.sourceSyncState.deleteMany({where:{id:'energy'}});
+ Object.assign(registry.energy,licensed(registry.energy));await db.sourceSyncState.deleteMany({where:{id:'energy'}});
  assert.equal((await ops.run('energy',adapter,context)).created,1);advance(95);assert.equal((await ops.run('energy',adapter,context)).status,'NOT_DUE');assert.equal(calls,1);
  advance(1);assert.equal((await ops.run('energy',adapter,context)).duplicate,1);assert.equal(calls,2);assert.equal(await db.announcementImportRow.count({where:{sourceUrl:row.sourceUrl}}),1);
  assert.equal((await db.announcementImportRow.findUnique({where:{sourceUrl:row.sourceUrl}})).status,'PENDING_REVIEW');

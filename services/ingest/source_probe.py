@@ -15,7 +15,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
-from official_rss import REGISTRY, official_url, parse_feed_report
+from official_rss import REGISTRY, official_url, parse_feed_report, check_robots, classify_error
+from source_rights import require_network_permission
 
 
 def probe(url, source_id, output, timeout=15, maximum=2_000_000):
@@ -24,9 +25,13 @@ def probe(url, source_id, output, timeout=15, maximum=2_000_000):
               'mode': 'EXPLICIT_LIVE_READ', 'automationEnabled': False,
               'republicationPermission': REGISTRY[source_id]['republicationPermission'],
               'phasesMs': {}, 'downloaded': False}
-    phase, connection, response = 'DNS', None, None
+    phase, connection, response = 'POLICY', None, None
     started = time.monotonic()
     try:
+        require_network_permission(REGISTRY[source_id], url)
+        phase = 'ROBOTS'
+        check_robots(source_id, url)
+        phase = 'DNS'
         host = urlsplit(url).hostname
         addresses = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
         if not addresses or any(not ipaddress.ip_address(a[4][0]).is_global for a in addresses):
@@ -78,7 +83,10 @@ def probe(url, source_id, output, timeout=15, maximum=2_000_000):
         temporary.replace(output)
         result.update(status='OK', downloaded=True, bytes=len(content), sha256=hashlib.sha256(content).hexdigest())
     except Exception as error:
-        result.update(status=('TIMEOUT' if isinstance(error, (TimeoutError, socket.timeout)) else
+        if phase == 'ROBOTS':
+            result.update(status=classify_error(error), failedPhase=phase, errorType=type(error).__name__)
+            return result
+        result.update(status=(str(error) if isinstance(error, ValueError) and str(error) in ('SOURCE_RESTRICTED','SOURCE_REVIEW_REQUIRED','SOURCE_LICENSE_INVALID','SOURCE_OPERATOR_DISABLED') else 'TIMEOUT' if isinstance(error, (TimeoutError, socket.timeout)) else
                               'TLS_ERROR' if isinstance(error, ssl.SSLError) else
                               'DNS_ERROR' if isinstance(error, socket.gaierror) else 'ERROR'),
                       failedPhase=phase, errorType=type(error).__name__)

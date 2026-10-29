@@ -18,8 +18,10 @@ jobs:
         with:
           node-version: 22
       - run: node infra/test-render-database.cjs
+      - run: node infra/test-locked-prisma.cjs
       - run: docker build -f Dockerfile.api -t kadroradar-api:rc1 .
       - run: node infra/test-render-readiness.cjs
+      - run: node infra/test-rss-runtime.cjs
   release-secrets:
     runs-on: ubuntu-latest
     steps:
@@ -30,6 +32,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python infra/check-release-secrets.py
+      - run: node infra/test-release-manifest.cjs
   parser:
     runs-on: ubuntu-latest
     steps:
@@ -42,6 +45,8 @@ jobs:
       - run: python -m unittest discover -s services/ingest -p test_official_rss.py -v
       - run: python -m unittest discover -s services/ingest -p test_source_adapters.py -v
       - run: python -m unittest discover -s services/ingest -p test_source_probe.py -v
+      - run: python -m unittest discover -s services/ingest -p test_feed_metadata.py -v
+      - run: python -m unittest discover -s services/ingest -p test_career_rss.py -v
       - run: python -m unittest discover -s services/ingest -p test_manual_import.py -v
       - run: python -m unittest discover -s services/ingest -p test_official_gazette.py -v
       - run: python -m unittest discover -s services/ingest -p test_osym_web.py -v
@@ -85,7 +90,12 @@ jobs:
       - run: node apps/api/test-historical-import.cjs
       - run: node apps/api/test-historical-formats.cjs
       - run: pnpm --filter @kadro/mobile exec tsc --noEmit
+      - run: node apps/api/test-source-rights-flow.cjs
+      - run: node apps/api/test-source-validators.cjs
+      - run: node apps/api/test-career-rss.cjs
+      - run: node apps/api/test-career-card.cjs
       - run: node apps/api/test-historical-release.cjs
+      - run: node apps/api/test-usability-auth-news.cjs && node infra/test-mobile-usability.cjs
       - run: node infra/test-safe-database-errors.cjs && node infra/test-mobile-ui.cjs && node infra/check-preview-config.cjs
       - name: Export Android preview bundle (no EAS build)
         run: pnpm --filter @kadro/mobile exec expo export --platform android --output-dir ../../.local/ci-android-export

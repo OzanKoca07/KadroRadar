@@ -16,6 +16,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit, urljoin
+from source_rights import require_network_permission
 
 FEED = 'https://enerji.gov.tr/RSS/15?t=1'
 USER_AGENT = 'KadroRadar/0.1 (official RSS reader)'
@@ -24,7 +25,7 @@ REGISTRY = json.loads((Path(__file__).resolve().parents[2] / 'packages' / 'offic
 def official_url(value, source_id='energy'):
     parsed = urlsplit(value)
     source = REGISTRY.get(source_id)
-    if not source or parsed.scheme != 'https' or parsed.hostname not in source['hosts'] or parsed.username or parsed.password or parsed.port not in (None, 443):
+    if not source or source_id == 'ilan' or source.get('rightsAssessment', {}).get('status') == 'RESTRICTED' or parsed.scheme != 'https' or parsed.hostname not in source['hosts'] or parsed.username or parsed.password or parsed.port not in (None, 443):
         raise ValueError('Unapproved source URL')
     return value
 
@@ -70,6 +71,9 @@ def parse_feed_report(content):
         record = {'title': title, 'sourceUrl': url, 'organization': 'T.C. Enerji ve Tabii Kaynaklar Bakanlığı',
                   'announcedAtRaw': item.findtext('pubDate'), 'status': 'PENDING_REVIEW',
                   'applicationStartAt': None, 'applicationEndAt': None, 'applicationUrl': None}
+        lowered = title.casefold()
+        record['eventType'] = 'CANCELLATION' if 'iptal' in lowered else 'EXTENSION' if re.search(r'süre.*uzat|tarih.*uzat', lowered) else 'RECRUITMENT'
+        record['eventVerified'] = False  # Title is a review hint, never a cancellation/extension authorization.
         record['contentHash'] = hashlib.sha256(json.dumps(record, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
         record['rawSourceReference'] = {'feedUrl': FEED, 'itemOrdinal': ordinal,
                                       'documentSha256': document_hash,
@@ -84,9 +88,10 @@ def parse_feed(content):
         raise ValueError('Personnel item has no detail URL; cannot stage feed URL as announcement')
     return report['rows']
 
-def check_robots():
-    robots_url = 'https://enerji.gov.tr/robots.txt'
-    validate_outbound_dns(robots_url)
+def check_robots(source_id='energy', feed=FEED):
+    parsed = urlsplit(feed)
+    robots_url = f'https://{parsed.hostname}/robots.txt'
+    validate_outbound_dns(robots_url, source_id)
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, *args, **kwargs): return None
     request = urllib.request.Request(robots_url, headers={'User-Agent': USER_AGENT, 'Accept': 'text/plain'})
@@ -101,10 +106,14 @@ def check_robots():
         raise  # Includes 403/429/redirect; never bypass or immediately retry.
     rules = urllib.robotparser.RobotFileParser(robots_url)
     rules.parse(text.splitlines())
-    if not rules.can_fetch('KadroRadar', FEED): raise ValueError('ROBOTS_DISALLOWED')
+    if not rules.can_fetch('KadroRadar', feed): raise ValueError('ROBOTS_DISALLOWED')
+    delay = rules.crawl_delay('KadroRadar')
+    planned = max(REGISTRY[source_id].get('scanIntervalHours', int(os.environ.get('ANNOUNCEMENT_SCAN_INTERVAL_HOURS', '96')))*3600, REGISTRY[source_id].get('indexingPolicy', {}).get('minIntervalSeconds', 3600))
+    if delay is not None and delay > planned: raise ValueError('ROBOTS_RATE_REQUIRES_REVIEW')
     return {'status': 'ALLOWED', 'url': robots_url, 'sha256': hashlib.sha256(content).hexdigest()}
 
 def sync(output):
+    require_network_permission(REGISTRY['energy'], FEED, require_enabled=True)
     robots = check_robots()
     state = json.loads(output.read_text(encoding='utf-8')) if output.exists() else {'rows': {}, 'etag': None, 'lastModified': None}
     headers = {'User-Agent': USER_AGENT, 'Accept': 'application/rss+xml, text/xml'}
@@ -143,6 +152,7 @@ def sync(output):
             'unresolvedCount': len(state['unresolved']), 'documentSha256': state['documentSha256']}
 
 def classify_error(error):
+    if isinstance(error, ValueError) and str(error) in ('SOURCE_RESTRICTED','SOURCE_REVIEW_REQUIRED','SOURCE_LICENSE_INVALID','SOURCE_OPERATOR_DISABLED'): return str(error)
     if isinstance(error, urllib.error.HTTPError):
         if error.code == 304: return 'NOT_MODIFIED'
         if error.code == 403: return 'FORBIDDEN'
@@ -151,6 +161,7 @@ def classify_error(error):
         return 'HTTP_ERROR'
     reason = getattr(error, 'reason', error)
     if isinstance(reason, ValueError) and str(reason) == 'ROBOTS_DISALLOWED': return 'ROBOTS_DISALLOWED'
+    if isinstance(reason, ValueError) and str(reason) == 'ROBOTS_RATE_REQUIRES_REVIEW': return 'ROBOTS_RATE_REQUIRES_REVIEW'
     if isinstance(reason, ValueError) and str(reason) == 'ROBOTS_RESPONSE_REQUIRES_REVIEW': return 'ACCESS_REVIEW_REQUIRED'
     if isinstance(reason, socket.gaierror): return 'DNS'
     if isinstance(reason, ssl.SSLError): return 'TLS'

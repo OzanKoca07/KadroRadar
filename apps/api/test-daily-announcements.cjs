@@ -1,3 +1,4 @@
+require('./test-source-fixtures.cjs').permitManualFixtures();
 // HTTP integration with explicitly synthetic documents; never a live Gazette fetch.
 const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path'),{execFileSync}=require('node:child_process'),{randomBytes}=require('node:crypto');require('reflect-metadata');
 if(!process.env.DATABASE_URL?.includes('/kadroradar_ingestion_test_'))throw Error('Isolated DB required');

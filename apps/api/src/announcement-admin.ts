@@ -1,5 +1,8 @@
 import { Body, Controller, Get, Post, Patch, Param, Headers, Req, Injectable, OnModuleDestroy, UnauthorizedException, ForbiddenException, BadRequestException, ConflictException } from '@nestjs/common';
 import { CandidateAuth } from './candidate';
+import {newsSource,newsFingerprint,newsSourceRecord} from './home-news';
+import {hardRestricted,SourceRightsStore} from './source-rights';
+import {careerEvidence} from './career-staging';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { createHmac, timingSafeEqual, createHash } from 'node:crypto';
 import { resolve } from 'node:path';
@@ -33,7 +36,7 @@ function url(value: unknown, source = false): string {
   if (typeof value !== 'string') throw new BadRequestException('Official HTTPS URL required');
   try {
     const u = new URL(value);
-    if (u.protocol !== 'https:' || u.username || u.password || (u.port && u.port !== '443') || !Object.values(registry).some(entry => entry.hosts.includes(u.hostname))) throw new Error();
+    if (u.protocol !== 'https:' || u.username || u.password || (u.port && u.port !== '443') || !Object.values(registry).some(entry => !hardRestricted(entry)&&entry.hosts.includes(u.hostname))) throw new Error();
     u.hash = ''; return u.toString();
   } catch { throw new BadRequestException('Unapproved URL'); }
 }
@@ -95,6 +98,24 @@ function fields(input: any, gazette?:any) {
 @Controller('admin/announcement-imports')
 export class AnnouncementAdminController {
   constructor(private db: IngestionDb, private auth: CandidateAuth) {}
+
+  @Post(':id/home-news')
+  async homeNews(@Req() req:any,@Param('id') id:string,@Body() body:any){
+    const user=await this.auth.role(req,['SYSTEM_ADMIN','REVIEWER'],true);
+    if(typeof body?.enabled!=='boolean'||body.enabled&&(typeof body.editorSummary!=='string'||body.editorSummary.trim().length<10||body.editorSummary.length>180||/[<>\r\n]/.test(body.editorSummary))||!Number.isInteger(body.version)||typeof body.evidence!=='string'||body.evidence.trim().length<20||body.evidence.length>2000||body.enabled&&(body.indexPermissionReviewed!==true||body.sourceVerified!==true))throw new BadRequestException('Manual source and indexing review required');
+    return this.db.$transaction(async tx=>{
+      const row=await tx.announcementImportRow.findUnique({where:{id}});
+      if(!row||row.version!==body.version||row.status!=='PUBLISHED'||!row.announcementId)throw new ConflictException();
+      const item=await tx.announcement.findUnique({where:{id:row.announcementId}});
+      if(!item||body.enabled&&(item.status!=='PUBLISHED'||!item.sourceCheckedAt||!item.publishedAt||!newsSource(item.sourceUrl)||!newsSource(row.sourceUrl)))throw new BadRequestException('Published official announcement required');
+      if(body.enabled&&await new SourceRightsStore(tx as any).status(newsSourceRecord(item!.sourceUrl))!=='LICENSE_VERIFIED')throw new ForbiddenException('Source license review required');
+      const changed=await tx.announcementImportRow.updateMany({where:{id,version:body.version},data:{version:{increment:1}}});if(!changed.count)throw new ConflictException();
+      const previous=item.sourceEvidence&&typeof item.sourceEvidence==='object'&&!Array.isArray(item.sourceEvidence)?item.sourceEvidence as Record<string,any>:{};
+      await tx.announcement.update({where:{id:item.id},data:{sourceEvidence:{...previous,homeNews:body.enabled?{mode:'MANUAL_REVIEWED',editorSummary:body.editorSummary.trim(),indexPermissionReviewed:true,reviewedAt:new Date().toISOString(),factsHash:newsFingerprint(item)}:null}}});
+      await tx.announcementReviewAudit.create({data:{rowId:id,actor:user.id,action:body.enabled?'FEATURE_NEWS':'UNFEATURE_NEWS',snapshot:{announcementId:item.id,editorSummary:body.enabled?body.editorSummary.trim():null,evidence:body.evidence,indexPermissionReviewed:body.indexPermissionReviewed===true}}});
+      return {updated:true};
+    });
+  }
   private async actor(req:any, roles:string[], mutate=false) {
     if(process.env.NODE_ENV !== 'production' && req.headers.authorization?.includes('.'))return authorize(req.headers.authorization,roles);
     return (await this.auth.role(req,roles,mutate)).id;
@@ -110,7 +131,7 @@ export class AnnouncementAdminController {
     if(!Number.isInteger(body?.version))throw new BadRequestException('version');
     return this.db.$transaction(async tx=>{
       const row=await tx.announcementImportRow.findUnique({where:{id}});if(!row||row.version!==body.version)throw new ConflictException('Refresh draft');
-      const parsed=fields(body.fields,row.sourceDocumentId?row.raw:undefined);if(row.sourceDocumentId)parsed.positionsReviewed=false;
+      const parsed=fields(body.fields,row.sourceDocumentId?row.raw:undefined);if((row.raw as any)?.sourceId==='career')parsed.sourceEvidence=careerEvidence(row.raw);if(row.sourceDocumentId)parsed.positionsReviewed=false;
       if(!row.sourceDocumentId&&parsed.sourceUrl!==row.sourceUrl)throw new BadRequestException('Source identity');
       const updated=await tx.announcementImportRow.updateMany({where:{id,version:body.version},data:{parsed,status:'PENDING_REVIEW',version:{increment:1}}});if(!updated.count)throw new ConflictException();
       if(row.announcementId){await tx.announcement.update({where:{id:row.announcementId},data:{sourceCheckedAt:null}});await tx.announcementPosition.updateMany({where:{announcementId:row.announcementId},data:{verifiedAt:null}});}
@@ -202,8 +223,16 @@ export class AnnouncementAdminController {
     return this.db.$transaction(async tx => {
       const row = await tx.announcementImportRow.findUnique({where: {id}});
       if (!row || row.version !== body.version) throw new ConflictException('Refresh record before reviewing');
+      if(body.action==='REJECT'){const changed=await tx.announcementImportRow.updateMany({where:{id,version:body.version},data:{status:'REJECTED',version:{increment:1}}});if(!changed.count)throw new ConflictException();await tx.announcementReviewAudit.create({data:{rowId:id,actor,action:'REJECT',snapshot:{evidence:typeof body.evidence==='string'?body.evidence.slice(0,2000):null}}});return {id,status:'REJECTED',announcementId:row.announcementId};}
+      if(['ARCHIVE','WITHDRAW'].includes(body.action)&&row.announcementId){const status=body.action==='ARCHIVE'?'ARCHIVED':'WITHDRAWN';await tx.announcement.update({where:{id:row.announcementId},data:{status}});const changed=await tx.announcementImportRow.updateMany({where:{id,version:body.version},data:{status,version:{increment:1}}});if(!changed.count)throw new ConflictException();await tx.announcementReviewAudit.create({data:{rowId:id,actor,action:body.action,snapshot:{announcementId:row.announcementId,evidence:typeof body.evidence==='string'?body.evidence.slice(0,2000):null}}});return {id,status,announcementId:row.announcementId};}
       const original=row.sourceDocumentId?row.raw as any:undefined;
       const parsed = fields(body.fields ?? row.parsed,original);
+      const career=(row.raw as any)?.sourceId==='career'?row.raw as any:null;
+      if(career)parsed.sourceEvidence=careerEvidence(career);
+      if(career&&['APPROVE','PUBLISH'].includes(body.action)){
+       if(career.categoryCode!=='PERSONNEL'||career.eventType!=='RECRUITMENT'||career.announcedAt&&Date.parse(career.announcedAt)>Date.now())throw new BadRequestException('Career category, future date or event requires separate review');
+       if(!parsed.applicationStartAt||!parsed.applicationEndAt||body.action==='APPROVE'&&body.careerDetailsVerified!==true)throw new BadRequestException('Official employer and application dates must be explicitly verified');
+      }
       if (!original && parsed.sourceUrl !== row.sourceUrl) throw new BadRequestException('Source identity cannot change');
       const action = body.action;
       if (action === 'APPROVE' && (body.sourceVerified !== true || typeof body.evidence !== 'string' || body.evidence.trim().length < 10)) throw new BadRequestException('Source verification evidence required');
@@ -219,6 +248,8 @@ export class AnnouncementAdminController {
       if (action === 'PUBLISH' && canonical(parsed) !== canonical(row.parsed)) throw new BadRequestException('Changed fields require approval');
       let announcementId = row.announcementId;
       if (action === 'PUBLISH') {
+        const source=newsSourceRecord(parsed.sourceUrl)||(row.sourceDocumentId?registry.gazette:undefined);
+        if(!source||await new SourceRightsStore(tx as any).status(source)!=='LICENSE_VERIFIED')throw new ForbiddenException('Source license review required');
         const {positions,positionsReviewed,...announcementFields}=parsed;
         const data = {...announcementFields, status: 'PUBLISHED', publishedAt: new Date(), sourceCheckedAt: row.updatedAt};
         const announcement = announcementId ? await tx.announcement.update({where: {id: announcementId}, data}) : await tx.announcement.create({data});

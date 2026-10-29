@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import urljoin
 from official_rss import REGISTRY, official_url, parse_feed_report
 from official_gazette import decode_official_html, parse_notice_html, parse_pdf, index_manifest
+from feed_metadata import parse_fact_feed
 
 
 class OfficialSourceAdapter:
@@ -57,8 +58,26 @@ class OfficialSourceAdapter:
 
 
 class SbbPublicAnnouncementsAdapter(OfficialSourceAdapter): source_id='sbb'
-class CareerGatewayAdapter(OfficialSourceAdapter): source_id='career'
+class CareerGatewayAdapter(OfficialSourceAdapter):
+    source_id='career'
+    capability='RSS2_METADATA_REVIEW'
+    def review(self,file,url):
+        data=Path(file).read_bytes()
+        if data.lstrip().startswith((b'<?xml',b'<rss',b'\xef\xbb\xbf',b'\xff\xfe',b'\xfe\xff')):
+            from career_rss import parse_career_feed
+            return self.envelope(data,url,parse_career_feed(data,url))
+        return super().review(file,url)
 class IskurPublicJobsAdapter(OfficialSourceAdapter): source_id='iskur'
+
+class SgkMetadataReviewAdapter(OfficialSourceAdapter):
+    source_id='sgk'
+    capability='RSS_ATOM_JSON_METADATA_REVIEW_ONLY'
+    def review(self,file,url):
+        data=Path(file).read_bytes()
+        return self.envelope(data,url,parse_fact_feed(data,self.source_id,url))
+
+class AgencyMetadataReviewAdapter(SgkMetadataReviewAdapter): source_id='karacadag'
+class UniversityMetadataReviewAdapter(SgkMetadataReviewAdapter): source_id='giresun'
 
 
 class OfficialInstitutionRssAdapter(OfficialSourceAdapter):
@@ -86,7 +105,7 @@ class OfficialGazetteAdapter(OfficialSourceAdapter):
 
 
 ADAPTERS={adapter.source_id:adapter for adapter in [OfficialGazetteAdapter,SbbPublicAnnouncementsAdapter,
-          CareerGatewayAdapter,IskurPublicJobsAdapter,OfficialInstitutionRssAdapter]}
+          CareerGatewayAdapter,IskurPublicJobsAdapter,OfficialInstitutionRssAdapter,SgkMetadataReviewAdapter,AgencyMetadataReviewAdapter,UniversityMetadataReviewAdapter]}
 
 
 def review_many(inputs):

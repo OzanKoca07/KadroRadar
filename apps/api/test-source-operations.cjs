@@ -1,3 +1,4 @@
+const {licensed}=require('./test-source-fixtures.cjs');
 const assert=require('node:assert/strict');
 require('reflect-metadata');
 if(!process.env.DATABASE_URL?.includes('/kadroradar_ingestion_test_'))throw Error('Isolated DB required');
@@ -7,10 +8,10 @@ const registry=require('../../packages/official-sources.json');
 (async()=>{const db=new PrismaClient();const ops=new SourceOperations(db,{});const original={...registry.energy};let calls=0;
 try{
  assert.equal(sourceAllowed(registry.energy),false);await assert.rejects(()=>ops.run('energy',async()=>{calls++;return []}));assert.equal(calls,0);
- assert.equal(sourceAllowed({...registry.energy,enabled:true,republicationPermission:'UNVERIFIED'}),true);
+ assert.equal(sourceAllowed({...registry.energy,enabled:true,republicationPermission:'UNVERIFIED'}),false);
  assert.equal(sourceAllowed({...registry.energy,enabled:true,indexingPolicy:{automatedAccess:'REVIEW_REQUIRED'}}),false);
  assert.equal(sourceAllowed({...registry.energy,enabled:true,indexingPolicy:{automatedAccess:'DISALLOWED'}}),false);
- Object.assign(registry.energy,{enabled:true});
+ Object.assign(registry.energy,licensed(registry.energy));
  await db.sourceSyncState.deleteMany({where:{id:'energy'}});
  const row={title:'Synthetic scheduler fixture',organization:'Fixture',sourceUrl:'https://enerji.gov.tr/scheduler-fixture-only'};
  let release,started;const wait=new Promise(r=>release=r),ready=new Promise(r=>started=r);
@@ -23,7 +24,7 @@ try{
  assert.equal((await ops.run('energy',async()=>{throw Error('TLS')})).errorCode,'TLS');
  const state=await db.sourceSyncState.findUnique({where:{id:'energy'}});assert.equal(state.consecutiveFailures,1);assert.ok(state.lastSuccessAt);assert.ok(state.nextAttemptAt>Date.now());assert.equal(backoff(100),86400000);assert.equal(state.metrics.successfulRuns,2);assert.equal(state.metrics.failedRuns,1);
  const originalSbb={...registry.sbb},originalRun=ops.run;const dispatched=[];
- try{Object.assign(registry.sbb,{enabled:true,format:'rss',indexingPolicy:{automatedAccess:'ALLOWED'}});ops.run=async id=>{dispatched.push(id);if(id==='energy')throw Error('SYNTHETIC_DISPATCH_FAILURE');return {status:'OK'}};await ops.tick();assert.deepEqual(dispatched,['energy','sbb']);}
+ try{Object.assign(registry.sbb,{...licensed(registry.sbb),format:'rss'});ops.run=async id=>{dispatched.push(id);if(id==='energy')throw Error('SYNTHETIC_DISPATCH_FAILURE');return {status:'OK'}};await ops.tick();assert.deepEqual(dispatched,['energy','sbb']);}
  finally{Object.assign(registry.sbb,originalSbb);ops.run=originalRun;}
  console.log('PASS: permission gates, PostgreSQL cross-worker lock, backoff, duplicate staging, durable health/error metrics, source dispatch isolation; adapters mocked, no source fetch');
 }finally{Object.assign(registry.energy,original);ops.onModuleDestroy();await db.$disconnect();}})().catch(e=>{console.error(e);process.exitCode=1;});

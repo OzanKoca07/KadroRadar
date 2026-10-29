@@ -7,7 +7,14 @@ COPY apps/api/package.json apps/api/package.json
 COPY apps/admin/package.json apps/admin/package.json
 COPY apps/mobile/package.json apps/mobile/package.json
 COPY packages/shared/package.json packages/shared/package.json
-RUN timeout 300s pnpm install --frozen-lockfile --ignore-scripts
+# The mobile workspace keeps its hoisted linker; the container selects only
+# API/admin with an isolated store and public hoisting for existing root tools.
+# Preload the two large, lockfile-verified archives with bounded HTTP ranges.
+COPY infra/fetch-locked-prisma.cjs infra/fetch-locked-prisma.cjs
+RUN --mount=type=cache,id=kadroradar-pnpm9,target=/pnpm/store \
+    timeout 900s node infra/fetch-locked-prisma.cjs /pnpm/store/locked-archives --import-store
+RUN --mount=type=cache,id=kadroradar-pnpm9,target=/pnpm/store \
+    timeout 900s pnpm --filter @kadro/api... --filter @kadro/admin... install --config.node-linker=isolated --shamefully-hoist --store-dir /pnpm/store --frozen-lockfile --ignore-scripts
 COPY packages packages
 COPY apps/api/prisma/schema.prisma apps/api/prisma/schema.prisma
 COPY infra/generate-prisma.cjs infra/generate-prisma.cjs
@@ -25,7 +32,7 @@ COPY --from=build --chown=node:node /app/apps/api /app/apps/api
 COPY --from=build --chown=node:node /app/packages /app/packages
 COPY --from=build --chown=node:node /app/apps/admin/dist /app/public/admin
 COPY --chown=node:node web /app/public/legal
-COPY --chown=node:node services/ingest/official_gazette.py services/ingest/official_rss.py services/ingest/source_adapters.py services/ingest/source_probe.py services/ingest/import_historical.py services/ingest/historical_tables.py services/ingest/osym_web.py /app/services/ingest/
+COPY --chown=node:node services/ingest/official_gazette.py services/ingest/official_rss.py services/ingest/source_rights.py services/ingest/feed_metadata.py services/ingest/career_rss.py services/ingest/rss_transport.py services/ingest/source_adapters.py services/ingest/source_probe.py services/ingest/import_historical.py services/ingest/historical_tables.py services/ingest/osym_web.py /app/services/ingest/
 RUN mkdir -p /app/.local/gazette /app/.local/historical /app/.local/sources && chown -R node:node /app/.local
 ENV NODE_ENV=production
 ENV PROCESS_ROLE=api

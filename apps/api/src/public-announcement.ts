@@ -6,7 +6,7 @@ function officialLink(value:any):string|null{
 function metadata(value:any):any{
  if(!value||typeof value!=='object')return null;
  const result:any={};
- for(const key of ['kind','format','gazetteDate','gazetteNumber','pdfSha256','documentSha256','htmlSha256','pageStart','pageEnd','page','advertisementId','sectionStartLine','pageLocator']){
+ for(const key of ['sourceId','categoryCode','category','kind','format','gazetteDate','gazetteNumber','pdfSha256','documentSha256','htmlSha256','pageStart','pageEnd','page','advertisementId','sectionStartLine','pageLocator']){
   const v=value[key];if(v===null||typeof v==='number'&&Number.isFinite(v)||typeof v==='string'&&v.length<=200)result[key]=v;
  }
  for(const key of ['sourceUrl','indexUrl'])if(value[key])result[key]=officialLink(value[key]);

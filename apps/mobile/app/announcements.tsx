@@ -5,6 +5,8 @@ import {announcementRequest} from '../lib/announcement-api';
 import {announcementStatus,dateText,errorText,type Announcement} from '../lib/presentation';
 import {Badge,Button,Card,Chip,EmptyState,ErrorState,Field,FilterPanel,Heading,Independence,Notice,OfficialLink,Pagination,SkeletonCards} from '../ui/components';
 import {ui} from '../ui/theme';
+import {CareerSourceCard} from '../ui/career-source-card';
+import {careerCategoryLabels} from '../lib/career-card';
 export default function Announcements(){
  const list=useRef<FlatList<Announcement>>(null);
  const [view,setView]=useState('open'),[q,setQ]=useState(''),[page,setPage]=useState(1),[reload,setReload]=useState(0);
@@ -17,7 +19,7 @@ export default function Announcements(){
  },[view,q,page,reload,filters]);
  const options=(label:string,key:string,values:string[][])=><View style={{gap:8}}><Text style={ui.label}>{label}</Text><View style={ui.row}>{values.map(([value,title])=><Chip key={value} label={title} selected={(draft[key]||'')===value} onPress={()=>filter(key,value)}/>)}</View></View>;
  return <View style={ui.root}><FlatList ref={list} data={data.items} keyExtractor={item=>item.id} contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled" refreshing={loading} onRefresh={()=>setReload(k=>k+1)} initialNumToRender={6}
-  ListHeaderComponent={<View style={{gap:16}}><Heading title="Bir sonraki adımını keşfet." description="Resmî kaynaklardan doğrulanan temel ilan bilgileri. Başvuru her zaman kurumun kendi platformunda."/>
+  ListHeaderComponent={<View style={{gap:16}}>
    <View style={ui.row}>{[['open','Güncel'],['upcoming','Yakında'],['archive','Arşiv']].map(([value,label])=><Chip key={value} label={label} selected={view===value} onPress={()=>{setView(value);setPage(1);}}/>)}</View>
    <Field label="İlan ara" placeholder="Kurum, unvan veya kadro" value={q} onChangeText={value=>{setQ(value);setPage(1);}} returnKeyType="search"/>
    <FilterPanel activeCount={Object.values(filters).filter(Boolean).length}>
@@ -32,8 +34,8 @@ export default function Announcements(){
    </FilterPanel>
    {error?<ErrorState message={error} onRetry={()=>setReload(k=>k+1)}/>:loading?<SkeletonCards/>:null}
   </View>}
-  ListEmptyComponent={!loading&&!error?<EmptyState icon="megaphone-outline" title={view==='archive'?'Arşivde gösterilecek ilan yok':q||Object.values(filters).some(Boolean)||page>1?'Bu görünümde ilan yok':'Yeni fırsatlar burada buluşacak'} description={q||Object.values(filters).some(Boolean)||page>1?'Filtrelerini değiştirebilir veya önceki sayfalara dönebilirsin.':'Resmî kaynaklardan doğrulanıp yayımlanan ilanlar burada listelenecek. Bu sırada geçmiş atamaları inceleyebilirsin.'} action={{title:'Geçmiş atamalara göz at',onPress:()=>router.push('/historical')}}/>:null}
-  renderItem={({item})=><Card><Badge text={announcementStatus(item)} tone={announcementStatus(item)==='Başvuru açık'?'success':'neutral'}/><Text style={ui.muted}>{item.organization}</Text><Text style={ui.heading}>{item.title}</Text><Text style={ui.body}>{item.positionTitle||'Kadro bilgisi detayda'} · {item.city||'Şehir belirtilmemiş'}</Text><Text style={ui.muted}>Kontenjan: {item.quota??'Belirtilmemiş'}</Text><Text style={ui.label}>Son başvuru · {dateText(item.applicationEndAt)}</Text><Button title="İlanı incele" icon="arrow-forward-outline" onPress={()=>router.push({pathname:'/announcement/[id]',params:{id:item.id}})}/><OfficialLink url={item.sourceUrl}/></Card>}
+  ListEmptyComponent={!loading&&!error?<EmptyState title={view==='archive'?'Arşivde ilan bulunmuyor.':view==='upcoming'?'Yakında başlayacak ilan bulunmuyor.':'Şu anda yayımlanmış ilan bulunmuyor.'} action={{title:'Geçmiş atamaları incele',onPress:()=>router.push('/historical')}}/>:null}
+  renderItem={({item})=>process.env.EXPO_PUBLIC_CAREER_CARD_ENABLED==='true'&&item.sourceEvidence?.sourceId==='career'&&item.sourceEvidence?.categoryCode==='PERSONNEL'?<CareerSourceCard item={item}/>:<Card><Badge text={announcementStatus(item)} tone={announcementStatus(item)==='Başvuru açık'?'success':'neutral'}/><Text style={ui.muted}>{item.organization}</Text><Text style={ui.heading}>{item.title}</Text>{item.sourceEvidence?.sourceId==='career'&&<><Text style={ui.caption}>{careerCategoryLabels[String(item.sourceEvidence.categoryCode)]||'Duyuru'}</Text><Text style={ui.caption}>Yayın · {dateText(item.announcedAt)}</Text></>}<Text style={ui.body}>{item.positionTitle||'Kadro bilgisi detayda'} · {item.city||'Şehir belirtilmemiş'}</Text><Text style={ui.muted}>Kontenjan: {item.quota??'Belirtilmemiş'}</Text><Text style={ui.label}>Son başvuru · {dateText(item.applicationEndAt)}</Text><Button title="İlanı incele" icon="arrow-forward-outline" onPress={()=>router.push({pathname:'/announcement/[id]',params:{id:item.id}})}/><OfficialLink url={item.sourceUrl}/></Card>}
   ListFooterComponent={<View style={{gap:12}}><Pagination page={page} pages={data.pages} loading={loading} onChange={value=>{setPage(value);list.current?.scrollToOffset({offset:0,animated:false});}}/><Independence/></View>}
  /></View>;
 }

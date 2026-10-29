@@ -1,3 +1,4 @@
+require('./test-source-fixtures.cjs').permitManualFixtures();
 const assert = require('node:assert/strict');
 const {createHmac, randomBytes} = require('node:crypto');
 const {execFileSync} = require('node:child_process');

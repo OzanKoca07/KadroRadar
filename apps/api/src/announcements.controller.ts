@@ -6,6 +6,8 @@ import {CandidateModule} from './candidate';
 import {positionFilters} from './announcement-filters';
 import {applicationStatus} from './announcement-status';
 import {publicAnnouncement} from './public-announcement';
+import {newsMetadata,newsSourceRecord} from './home-news';
+import {SourceRightsStore} from './source-rights';
 
 @Injectable()
 class AnnouncementsDb extends PrismaClient implements OnModuleDestroy {
@@ -35,6 +37,15 @@ const publicFields = {
 @Controller('announcements')
 class AnnouncementsController {
   constructor(private readonly db: AnnouncementsDb) {}
+
+  @Get('news')
+  async news(){
+    const now=new Date();
+    const rows=await this.db.announcement.findMany({where:{status:'PUBLISHED',publishedAt:{lte:now},sourceCheckedAt:{not:null},applicationEndAt:{gte:now},sourceEvidence:{path:['homeNews','mode'],equals:'MANUAL_REVIEWED'}},select:publicFields,orderBy:[{publishedAt:'desc'},{id:'desc'}],take:20});
+    const items:any[]=[],rights=new SourceRightsStore(this.db);
+    for(const row of rows){const item=newsMetadata(row);if(item&&await rights.status(newsSourceRecord(row.sourceUrl))==='LICENSE_VERIFIED')items.push(item);if(items.length===5)break;}
+    return {items};
+  }
 
   @Get('archive')
   archive(@Query('page') page?: string, @Query('limit') limit?: string) {

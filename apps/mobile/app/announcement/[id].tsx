@@ -1,7 +1,7 @@
 import {useEffect,useState} from 'react';
-import {useLocalSearchParams} from 'expo-router';
+import {router,useLocalSearchParams} from 'expo-router';
 import {Text,View} from 'react-native';
-import {accountRequest} from '../../lib/account';
+import {accountRequest,hasSession} from '../../lib/account';
 import {announcementDetailRequest} from '../../lib/announcement-api';
 import {announcementStatus,dateTimeText,educationLabel,errorText,type Announcement} from '../../lib/presentation';
 import {Badge,Button,Card,ErrorState,Fact,Heading,Independence,Notice,OfficialLink,Screen,SkeletonCards} from '../../ui/components';
@@ -16,8 +16,9 @@ export default function Detail(){
  return <Screen>{error?<ErrorState message={error} onRetry={()=>setRetry(k=>k+1)}/>:!item?<SkeletonCards/>:<>
   <Badge text={announcementStatus(item)} tone={announcementStatus(item)==='Başvuru açık'?'success':'warning'}/><Heading title={item.title} description={item.organization}/>
   <Card><Text style={ui.heading}>Bir bakışta</Text><Fact label="Kadro" value={item.positionTitle||'Belirtilmemiş'}/><Fact label="Şehir" value={item.city||'Belirtilmemiş'}/><Fact label="Kontenjan" value={item.quota??'Belirtilmemiş'}/>{item.educationLevel&&<Fact label="Eğitim" value={educationLabel(item.educationLevel)}/>}<Fact label="Başvuru başlangıcı" value={dateTimeText(item.applicationStartAt)}/><Fact label="Son başvuru" value={dateTimeText(item.applicationEndAt)}/></Card>
-  <Button title="İlanı kaydet" icon="bookmark-outline" disabled={busy} onPress={()=>void action(async()=>{await accountRequest('/account/saved/'+encodeURIComponent(id),'PUT',{});setMessage('İlan kaydedildi. Değişikliklerini Kaydedilenler ekranından takip edebilirsin.');})}/>
+  {hasSession()?<>  <Button title="İlanı kaydet" icon="bookmark-outline" disabled={busy} onPress={()=>void action(async()=>{await accountRequest('/account/saved/'+encodeURIComponent(id),'PUT',{});setMessage('İlan kaydedildi. Değişikliklerini Kaydedilenler ekranından takip edebilirsin.');})}/>
   <Button title="Profilimle karşılaştır" icon="checkmark-circle-outline" variant="secondary" disabled={busy} onPress={()=>void action(async()=>setMatches(await accountRequest('/account/matches/'+encodeURIComponent(id))))}/>
+  </>:<Button title="Kaydetmek veya karşılaştırmak için giriş yap" onPress={()=>router.push({pathname:'/profile',params:{returnAnnouncement:id}})}/>}
   {!!message&&<Text accessibilityRole="alert" style={ui.body}>{message}</Text>}
   {matches&&<Card><Text style={ui.heading}>Kadro bazında sonuçların</Text>{matches.emptyReason&&<Text style={ui.muted}>{matches.emptyReason}</Text>}{matches.items.map(position=><View key={position.positionId} style={{gap:8}}><Text style={ui.label}>{position.title}</Text><Badge tone={position.outcome==='ELIGIBLE'?'success':'warning'} text={position.outcome==='ELIGIBLE'?'UYGUN':position.outcome==='INELIGIBLE'?'UYGUN DEĞİL':'BELİRSİZ / DOĞRULAMA GEREKLİ'}/>{position.reasons.map((reason,index)=><Text key={index} style={ui.muted}>• {reason.reason}</Text>)}</View>)}</Card>}
   {(item.positions??[]).map(position=><Card key={position.id}><Text style={ui.heading}>{position.title}</Text><Text style={ui.muted}>{position.city||'Şehir belirtilmemiş'} · {position.quota??'Belirtilmemiş'} kontenjan</Text><Badge text={position.verifiedAt?'Kaynaktan kontrol edilmiş':'Koşullar doğrulanmamış'} tone={position.verifiedAt?'neutral':'warning'}/><Fact label="Eğitim" value={position.requirements.educationLevels?.map(educationLabel).join(', ')||'Belirtilmemiş'}/><Fact label="KPSS" value={position.requirements.kpssRequired===false?'Aranmıyor':(position.requirements.kpssScoreType||'Puan türü belirsiz')+' · '+(position.requirements.kpssMinimumScore??'Taban puan belirsiz')}/></Card>)}

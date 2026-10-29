@@ -1,0 +1,46 @@
+# INACTIVE TEMPLATE. Outside .github/workflows: no scheduler is registered.
+# Copy only after source licenses, target DB, cost, egress and write approval are reviewed.
+name: Reviewed source worker candidate
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 */6 * * *'
+permissions:
+  contents: read
+concurrency:
+  group: kadroradar-source-worker
+  cancel-in-progress: false
+jobs:
+  sources:
+    if: vars.SOURCE_AUTOMATION_APPROVED == 'true' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    environment: source-automation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.SOURCE_WORKER_DATABASE_URL }}
+      NODE_ENV: production
+      CORS_ORIGINS: https://kadroradar.onrender.com
+      PROCESS_ROLE: source-worker
+      SOURCE_SYNC_ENABLED: 'true'
+      SOURCE_WORKER_ONCE: 'true'
+      NOTIFICATIONS_ENABLED: 'false'
+      DOCUMENT_UPLOADS_ENABLED: 'false'
+      ALLOW_SELF_REGISTRATION: 'false'
+      ANNOUNCEMENT_SCAN_INTERVAL_HOURS: '96'
+      INGEST_PYTHON: python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm --filter @kadro/api prisma:generate
+      - run: pnpm --filter @kadro/api build
+      # No migrations, admin bootstrap, import/publish operator scripts or deployment.
+      - run: node apps/api/dist/worker.js

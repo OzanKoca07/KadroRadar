@@ -12,7 +12,7 @@ from official_rss import parse_feed, parse_feed_report, official_url, check_robo
 class FeedTests(unittest.TestCase):
     def test_robots_rules_and_html_challenge(self):
         from unittest.mock import MagicMock
-        for content,allowed in [(b'User-agent: *\nAllow: /\nDisallow: /uploads',True),(b'User-agent: *\nDisallow: /RSS',False),(b'<html>CAPTCHA</html>',False)]:
+        for content,allowed in [(b'User-agent: *\nAllow: /\nDisallow: /uploads',True),(b'User-agent: *\nDisallow: /RSS',False),(b'User-agent: *\nAllow: /\nCrawl-delay: 1000000',False),(b'<html>CAPTCHA</html>',False)]:
             response=MagicMock();response.__enter__.return_value=response;response.read.return_value=content
             opener=MagicMock();opener.open.return_value=response
             with patch('official_rss.validate_outbound_dns'),patch('urllib.request.build_opener',return_value=opener):
@@ -61,7 +61,7 @@ class FeedTests(unittest.TestCase):
                     assert self_request.get_header('If-none-match') == 'fixture-etag'
                     assert self_request.get_header('If-modified-since') == state['lastModified']
                     raise urllib.error.HTTPError(request.full_url,304,'Not modified',{},None)
-            with patch('urllib.request.build_opener', return_value=Opener()), patch('official_rss.validate_outbound_dns'), patch('official_rss.check_robots',return_value={'status':'ALLOWED'}):
+            with patch('urllib.request.build_opener', return_value=Opener()), patch('official_rss.validate_outbound_dns'), patch('official_rss.check_robots',return_value={'status':'ALLOWED'}), patch('official_rss.require_network_permission'):
                 self.assertTrue(sync(output)['notModified'])
             self.assertEqual(json.loads(output.read_text()), state)
     def test_missing_dates_stay_unknown(self):
