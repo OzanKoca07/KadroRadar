@@ -36,6 +36,8 @@ PORT=10000 / API_PORT=3999 önceliği, Nest başlangıcı, dört flag kapalı, a
 
 `fitz`, `career_rss`, `rss_transport`, `source_adapters`, `source_rights` importları ağsız container'da PASS; kaynak kapalı ve gerçek XML image dışında. Geçici test container/network'leri temizlendi. Kanıtlar `.local/release/render-readiness.json`, `.local/release-candidate/rss-runtime.json`, `clean-build-metadata.json`, `clean-build.log`.
 
+Release SHA ile cache üzerinden tekrar build edildi; provenance içindeki `vcs:revision` tam olarak `ea73ef96d7801cd24430c9f537aff1aec72764dc`. Release index digest `sha256:f034c08088e74780f8a58a01a5f2583b99e7d399c402731d1f9320492baa493d`; önceki index'ten farkı attestation metadata'sıdır. Uygulama manifest'i `sha256:87212f4e1f7ed3a42e923836a49e9b70a92d3508df3ac9c4c3409821f5add94f` ve config digest iki build log'unda aynı olduğu otomatik doğrulandı. Dolayısıyla dokuz runtime kontrolünün çalıştığı uygulama katmanları aynıdır; yeni release index üzerinde ağsız Python smoke da tekrar PASS. Kanıt: `.local/release-candidate/release-sha-proof.json` ve `release-build-metadata.json`.
+
 ## 4. Manifest ve koruma
 
 `docs/RELEASE_CANDIDATE_FILES.json` esas alınır. `infra/test-release-manifest.cjs` aday dosyaların varlığını, private dosya dışlamasını, relative import bağımlılıklarını ve tüm dirty/untracked değişikliklerin kategorisini denetler. Derlenmiş dist importları kaynak TS dosyalarıyla karşılaştırılır. Operatör grubu core grubuyla kesişmez.
@@ -68,7 +70,7 @@ Gerçek XML ve türetilen testler/çıktılar yalnız `.local/kariyer` altında.
 
 Başlangıç HEAD `0d7c0d0e3f8016a2bcf0fa58fb5a42d8d2d81147`, dal `feature/announcements-core`.
 
-Bağlı API/admin/mobil/source-policy/build/CI dosyaları ve manifestin istediği dokümanlar tek atomik core commit grubudur: **71 kod/test + 8 doküman/taslak = 79 dosya**. Böylece ilk commit'in CI'si eksik manifest/rapor veya importla kalmaz. Core SHA commit sonrasında ayrı rapor güncellemesinde kaydedilir. 23 operatör dosyası ayrı dirty grupta kalır ve hash'leri korunur. Push için ayrıca kullanıcı onayı gerekir.
+Bağlı API/admin/mobil/source-policy/build/CI dosyaları ve manifestin istediği dokümanlar tek atomik core commit grubudur: **71 kod/test + 8 doküman/taslak = 79 dosya**. Böylece ilk commit'in CI'si eksik manifest/rapor veya importla kalmaz. Core release commit SHA: `ea73ef96d7801cd24430c9f537aff1aec72764dc`. Commit mesajı `release: finalize source policy, mobile auth UX and API image [skip render]`. Bu dokümanın SHA/image kanıtı ayrı rapor commit'inde güncellenir; uygulama kodu değişmez. 23 operatör dosyası ayrı dirty grupta kalır ve hash'leri korunur. Push için ayrıca kullanıcı onayı gerekir.
 
 ## 7. CI hazırlığı
 
@@ -80,7 +82,7 @@ Mevcut workflow sentetik parser ve kaynak fixture'ları, auth/UX, historical fil
 2. Mevcut Render Web Service'i koruyun. Branch ve Dockerfile yolu `Dockerfile.api`; Docker context repository root. Yeni servis/DB oluşturmayın.
 3. Dashboard'da `SOURCE_SYNC_ENABLED=false`, `NOTIFICATIONS_ENABLED=false`, `DOCUMENT_UPLOADS_ENABLED=false`, `PROCESS_ROLE=api` doğrulayın. `ALLOW_SELF_REGISTRATION` mevcut production kararı olarak korunur.
 4. DATABASE_URL mevcut Render hedefi olarak Dashboard'da kalır; paylaşılmaz. `NODE_ENV=production`, mevcut HTTPS `CORS_ORIGINS`, `TRUST_PROXY_HOPS=1` doğrulanır. Render `PORT` önceliklidir. Pre-deploy migration/seed/import/bootstrap komutu eklemeyin.
-5. Mevcut yedek ve önceki SHA rollback için korunur. Ayrı deployment onayından sonra Manual Deploy → Deploy a specific commit ile onaylı SHA seçilir.
+5. Mevcut yedek ve önceki SHA rollback için korunur. Ayrı deployment onayından sonra Manual Deploy → Deploy a specific commit ile onaylı core SHA `ea73ef96d7801cd24430c9f537aff1aec72764dc` seçilir; daha sonraki yalnız rapor commit'i de aynı uygulama kodunu taşır.
 6. Salt okunur GET: `/api/v1/health` içindeki `release.commit` Render commit'iyle karşılaştırılır; tarihsel toplam 8.611, sayfalar arası benzersiz kimlikler, taban/tavan filtreleri, announcements, account/capabilities, `/admin/`, `/privacy`, `/delete-account` kontrol edilir. Gerçek kullanıcı açılmaz veya policy değiştirilmez.
 
 Bu adımlar uygulanmış deployment değildir. Bu görevde production bağlantı bilgisi kullanılmadı.
