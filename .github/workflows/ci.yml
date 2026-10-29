@@ -8,6 +8,10 @@ jobs:
         shell: [powershell, pwsh]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node infra/test-dev-process.cjs
       - run: ${{ matrix.shell }} -NoProfile -File .\infra\test-private-directory.ps1
         shell: powershell
   render-runtime:

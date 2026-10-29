@@ -2,9 +2,10 @@ const assert=require('node:assert/strict'),{EventEmitter}=require('node:events')
 function response(status,range,body){return {get(url,options,callback){assert.ok(url.startsWith('https://registry.npmjs.org/'));assert.equal(options.headers.Range,'bytes=0-2');assert.ok(options.signal);assert.equal(options.rejectUnauthorized,undefined);const req=new EventEmitter();process.nextTick(()=>{const res=new PassThrough();res.statusCode=status;res.headers={'content-range':range};callback(res);res.end(body);});return req;}};}
 (async()=>{
 const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process');
+const parent=path.resolve(__dirname,'../.local/release-candidate');fs.mkdirSync(parent,{recursive:true});
 const temp=fs.mkdtempSync(path.join(__dirname,'../.local/release-candidate/archive-negative-'));try{const lock=fs.readFileSync(path.join(__dirname,'../pnpm-lock.yaml'),'utf8');const version=lock.match(/^  '@prisma\/client@([^']+)':/m)[1];fs.writeFileSync(path.join(temp,'client-'+version+'.tgz'),'corrupt');const result=cp.spawnSync(process.execPath,[path.join(__dirname,'fetch-locked-prisma.cjs'),temp],{encoding:'utf8',timeout:5000,windowsHide:true});assert.equal(result.status,1);assert.ok(result.stderr.includes('ARCHIVE_CACHE_INTEGRITY_MISMATCH'));}finally{assert.ok(path.resolve(temp).startsWith(path.resolve(__dirname,'../.local/release-candidate')+path.sep));fs.rmSync(temp,{recursive:true});}
 const url='https://registry.npmjs.org/prisma/-/prisma-6.19.3.tgz';
 const ok=await request(url,0,2,3,response(206,'bytes 0-2/3','abc'));assert.equal(ok.body.toString(),'abc');
 for(const [status,range,body]of [[200,'bytes 0-2/3','abc'],[403,'bytes 0-2/3','abc'],[429,'bytes 0-2/3','abc'],[302,'bytes 0-2/3','abc'],[206,'bytes 1-3/3','abc'],[206,'bytes 0-2/4','abc'],[206,'bytes 0-2/999999999','abc'],[206,'bytes 0-2/3','ab'],[206,'bytes 0-2/3','abcd']])await assert.rejects(request(url,0,2,3,response(status,range,body)));
 console.log('PASS locked archive transport: exact206/range/length; redirect403429/oversize/incomplete rejected; TLS default retained');
-})().catch(()=>{console.error('FAIL locked archive contract');process.exitCode=1;});
+})().catch(error=>{console.error(JSON.stringify({status:'FAIL',test:'locked archive contract',kind:error.name,code:error.code||'CONTRACT_ASSERTION'}));process.exitCode=1;});

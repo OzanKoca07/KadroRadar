@@ -72,7 +72,12 @@
     "infra/test-release-manifest.cjs",
     "infra/fetch-locked-prisma.cjs",
     "infra/test-locked-prisma.cjs",
-    "infra/generate-prisma.cjs"
+    "infra/generate-prisma.cjs",
+    "apps/mobile/metro.config.js",
+    "infra/dev.cjs",
+    "infra/dev.ps1",
+    "infra/test-dev-process.cjs",
+    "apps/api/test-admin-browser.cjs"
   ],
   "documentationAndInactiveTemplates": [
     "docs/KADRORADAR_RELEASE_CANDIDATE_FINAL.md",
@@ -82,7 +87,8 @@
     "docs/RELEASE_CANDIDATE_FILES.json",
     "infra/official-career-notice.sql.example",
     "infra/source-worker.workflow.example.yml",
-    "docs/RELEASE_DEPLOYMENT_FINAL_CHECK.md"
+    "docs/RELEASE_DEPLOYMENT_FINAL_CHECK.md",
+    "docs/CI_AND_WINDOWS_PROCESS_FIX.md"
   ],
   "separateOperatorReviewPreserveUnchanged": [
     "docs/ADMIN_STATUS_DIAGNOSIS.md",

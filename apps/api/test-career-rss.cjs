@@ -9,8 +9,8 @@ const {SourceOperations}=require('./dist/source-operations'),{stageCareerSnapsho
 const original=structuredClone(registry.career),suffix=randomBytes(5).toString('hex'),checks=[];
 const auth={role:async(req,roles,mutate)=>{assert.ok(roles.includes(req.fixtureRole));if(mutate)assert.equal(req.fixtureCsrf,true);return {id:'SYNTHETIC-career-editor'};}};
 const req={headers:{},fixtureRole:'SYSTEM_ADMIN',fixtureCsrf:true};
-const fixture=fs.readFileSync('../../services/ingest/fixtures/career-synthetic.xml','utf8');
-function parse(text=fixture){const file=path.resolve('../../.local/kariyer','fixture-'+suffix+'.xml');fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,text);try{return JSON.parse(cp.execFileSync('python',[path.resolve('../../services/ingest/career_rss.py'),'--fixture',file],{encoding:'utf8',stdio:'pipe',windowsHide:true}));}finally{fs.unlinkSync(file);}}
+const fixture=fs.readFileSync(path.resolve(__dirname,'../../services/ingest/fixtures/career-synthetic.xml'),'utf8');
+function parse(text=fixture){const file=path.resolve(__dirname,'../../.local/kariyer','fixture-'+suffix+'.xml');fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,text);try{return JSON.parse(cp.execFileSync('python',[path.resolve(__dirname,'../../services/ingest/career_rss.py'),'--fixture',file],{encoding:'utf8',stdio:'pipe',windowsHide:true}));}finally{fs.unlinkSync(file);}}
 function pass(s){checks.push(s);console.log('PASS '+s);}
 (async()=>{const db=new PrismaClient();let app;try{
  const users=await db.user.count(),sessions=await db.candidateSession.count(),announcementsBefore=await db.announcement.count();let calls=0;
@@ -40,5 +40,5 @@ function pass(s){checks.push(s);console.log('PASS '+s);}
  await assert.rejects(admin.review(id,req,{version:row.version,action:'APPROVE',fields:{...fields,sourceUrl:row.sourceUrl},careerDetailsVerified:true,sourceVerified:true,evidence:'SYNTHETIC title extension is insufficient'}));
  await admin.review(id,req,{version:row.version,action:'WITHDRAW',evidence:'SYNTHETIC explicit reviewed withdrawal'});assert.equal((await db.announcement.findUniqueOrThrow({where:{id:publicRow.id}})).status,'WITHDRAWN');pass('GUID survives canonical URL changes; extension title cannot publish; explicit withdrawal works');
  const policy=await ops.rights.review(registry.career,{status:'REVIEW_REQUIRED',reason:'SYNTHETIC rights revoked for isolated policy test',expectedRevision:null},'SYNTHETIC');assert.equal(policy.effectiveStatus,'REVIEW_REQUIRED');await assert.rejects(ops.run('career',async()=>output,clock));assert.equal(await db.user.count(),users);assert.equal(await db.candidateSession.count(),sessions);pass('runtime revocation and unchanged user/session counts');
- fs.writeFileSync('../../.local/kariyer/isolated-flow.json',JSON.stringify({source:'SYNTHETIC_ONLY',checks,liveDownloaded:0,productionWrites:0,usersCreated:0},null,2));
+ fs.writeFileSync(path.resolve(__dirname,'../../.local/kariyer/isolated-flow.json'),JSON.stringify({source:'SYNTHETIC_ONLY',checks,liveDownloaded:0,productionWrites:0,usersCreated:0},null,2));
 }finally{if(app)await app.close();Object.assign(registry.career,original);await db.$disconnect();}})().catch(e=>{console.error(JSON.stringify({event:'CAREER_RSS_TEST_FAILED',kind:e.name,reason:e.name==='AssertionError'?e.message.slice(0,150):undefined}));process.exitCode=1;});

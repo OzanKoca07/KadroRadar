@@ -9,6 +9,8 @@ const docker=args=>cp.execFileSync('docker',args,{encoding:'utf8',stdio:'pipe',w
  const port=docker(['port',name,'5432/tcp']).trim().split(':').at(-1),env={...process.env,DATABASE_URL:'postgresql://fixture:'+secret+'@127.0.0.1:'+port+'/'+database,PROCESS_ROLE:'api',SOURCE_SYNC_ENABLED:'false',NOTIFICATIONS_ENABLED:'false',DOCUMENT_UPLOADS_ENABLED:'false',NODE_ENV:'development'};
  cp.execFileSync(process.execPath,['node_modules/prisma/build/index.js','migrate','deploy','--schema','apps/api/prisma/schema.prisma'],{env,stdio:'pipe',timeout:120000,windowsHide:true});
  const tests=['test-indexing-policy','test-source-operations','test-announcement-scan','test-source-worker-process','test-historical-release','test-source-rights-flow','test-career-rss'];
+ if(process.argv.includes('--browser-only'))tests.splice(0,tests.length,'test-admin-browser');
+ if(process.argv.includes('--admin-browser'))tests.push('test-admin-browser');
  if(process.argv.includes('--auth'))tests.unshift('test-candidate','test-usability-auth-news','test-mobile-network');
  if(process.argv.includes('--real-career-fixture'))tests.push('../../.local/kariyer/test-real-staging');
  for(const test of tests){try{cp.execFileSync(process.execPath,[test+'.cjs'],{cwd:path.join(root,'apps/api'),env,stdio:'pipe',timeout:180000,windowsHide:true,maxBuffer:8*1024*1024});results.push({test,status:'PASS'});}catch(error){results.push({test,status:'FAIL',kind:error.name,exitCode:error.status});}console.log(JSON.stringify(results.at(-1)));}

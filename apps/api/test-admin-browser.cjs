@@ -2,14 +2,17 @@ const assert=require('node:assert/strict');
 const path=require('node:path');
 const {spawn,execFileSync}=require('node:child_process');
 const {randomBytes}=require('node:crypto');
-if(!process.env.DATABASE_URL?.includes('/kadroradar_ingestion_test_'))throw Error('Isolated DB required');
-process.env.NODE_ENV='test';process.env.NOTIFICATIONS_ENABLED='false';process.env.SOURCE_SYNC_ENABLED='false';
+let testTarget;try{testTarget=new URL(process.env.DATABASE_URL||'postgresql://invalid/invalid');}catch{throw Error('Isolated DB required');}
+if(!['postgres:','postgresql:'].includes(testTarget.protocol)||!['localhost','127.0.0.1','db','[::1]'].includes(testTarget.hostname)||!/^\/kadroradar_ingestion_test_/.test(testTarget.pathname))throw Error('Isolated DB required');
+process.env.NODE_ENV='test';process.env.NOTIFICATIONS_ENABLED='false';process.env.SOURCE_SYNC_ENABLED='false';process.env.DOCUMENT_UPLOADS_ENABLED='true';
 require('reflect-metadata');
 const {PrismaClient}=require('@prisma/client');
 const {NestFactory}=require('@nestjs/core');
 const {AppModule}=require('./dist/module');
 const {passwordHash}=require('./dist/password');
 const {chromium}=require('@playwright/test');
+const registry=require('../../packages/official-sources.json'),{licensed}=require('./test-source-fixtures.cjs');
+const originalEnergy=structuredClone(registry.energy);
 (async()=>{
  const db=new PrismaClient(),suffix=randomBytes(6).toString('hex'),password=randomBytes(20).toString('hex'),email=`browser-${suffix}@example.test`;
  const user=await db.user.create({data:{email,passwordHash:await passwordHash(password),role:'SYSTEM_ADMIN'}});
@@ -19,7 +22,7 @@ const {chromium}=require('@playwright/test');
  let browser,page;let checks=0;
  try{
   for(let i=0;i<100;i++){try{if((await fetch('http://127.0.0.1:5179')).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
-  browser=await chromium.launch({...(process.platform==='win32'?{channel:'msedge'}:{}),headless:true});const context=await browser.newContext();page=await context.newPage();page.on('console',message=>{if(message.type()==='warning'||message.type()==='error')console.error('Browser:',message.text());});
+  browser=await chromium.launch({...(process.platform==='win32'?{channel:'msedge'}:{}),headless:true});const context=await browser.newContext();page=await context.newPage();page.on('response',r=>{if(r.status()>=400){const u=new URL(r.url());console.log(JSON.stringify({event:'BROWSER_HTTP_FAILURE',method:r.request().method(),route:u.pathname.replace(/\/[a-z0-9]{20,}(?=\/|$)/g,'/:id'),status:r.status()}));}});page.on('console',message=>{if(message.type()==='warning'||message.type()==='error')console.error('Browser:',message.text());});
   await page.goto('http://127.0.0.1:5179');
   const login=async()=>{await page.getByLabel('E-posta',{exact:true}).fill(email);await page.getByLabel('Parola',{exact:true}).fill(password);await page.getByRole('button',{name:'Hesapla giriş yap'}).click();await page.getByRole('button',{name:'Kuyruğu getir'}).waitFor({state:'visible'});await require('@playwright/test').expect(page.getByRole('button',{name:'Kuyruğu getir'})).toBeEnabled();};
   await login();checks++;
@@ -36,7 +39,14 @@ const {chromium}=require('@playwright/test');
   await page.getByLabel('Kaynak kontrolü kanıtı ve notu').fill('Synthetic browser source review only');
   await page.getByRole('button',{name:'APPROVE',exact:true}).click();
   await page.getByRole('button',{name:title+' · APPROVED',exact:true}).click();
-  await page.getByRole('button',{name:'PUBLISH',exact:true}).click();
+  const publishResponse=()=>page.waitForResponse(r=>r.url().includes('/admin/announcement-imports/')&&r.url().endsWith('/review')&&r.request().method()==='POST'&&r.request().postDataJSON()?.action==='PUBLISH');
+  let publishing=publishResponse();await page.getByRole('button',{name:'PUBLISH',exact:true}).click();
+  const denied=await publishing;assert.equal(denied.status(),403);assert.equal((await denied.json()).message,'Source license review required');
+  const approvedRow=await db.announcementImportRow.findFirstOrThrow({where:{sourceUrl:'https://enerji.gov.tr/browser-fixture-'+suffix}});assert.equal(approvedRow.status,'APPROVED');assert.equal(approvedRow.announcementId,null);checks++;
+  // Only this isolated process receives a synthetic fixture license. Auth, RBAC,
+  // CSRF and the production registry file remain unchanged.
+  Object.assign(registry.energy,licensed(registry.energy));
+  publishing=publishResponse();await page.getByRole('button',{name:'PUBLISH',exact:true}).click();assert.equal((await publishing).status(),201);
   await page.getByRole('button',{name:title+' · PUBLISHED',exact:true}).click();
   await page.getByRole('heading',{name:'Denetim geçmişi'}).waitFor();checks+=3;
   await page.getByRole('button',{name:'ARCHIVE',exact:true}).click();await page.getByRole('button',{name:title+' · ARCHIVED',exact:true}).waitFor();checks++;
@@ -47,7 +57,7 @@ const {chromium}=require('@playwright/test');
   await page.getByLabel('Fihrist HTML',{exact:true}).setInputFiles({name:'synthetic-index.html',mimeType:'text/html',buffer:Buffer.from('<h2>1 Ekim 2026 Tarihli ve 99999 Sayılı Resmî Gazete</h2><a href="/eskiler/2026/10/20261001.pdf">SYNTHETIC PDF</a>')});
   await page.getByRole('button',{name:'Fihristi kaydet',exact:true}).click();await page.getByText(/Yerel HTML fihristi kaydedildi/).waitFor();
   await page.getByLabel('Fihrist PDF bağlantısı',{exact:true}).selectOption('https://www.resmigazete.gov.tr/eskiler/2026/10/20261001.pdf');checks+=3;
-  const pdf=path.join(root,'tmp/pdfs/browser-'+suffix+'.pdf');execFileSync('python',[path.join(root,'services/ingest/fixtures/make_gazette_fixture.py'),pdf]);
+  const pdf=path.join(root,'tmp/pdfs/browser-'+suffix+'.pdf');execFileSync('python',[path.join(root,'services/ingest/fixtures/make_gazette_fixture.py'),pdf],{windowsHide:true});
   await page.getByLabel('Resmî Gazete PDF',{exact:true}).setInputFiles(pdf);
   await page.getByRole('button',{name:"PDF ayrıştır ve staging'e aktar",exact:true}).click();
   await page.getByText(/1 yeni, 0 değişen, 0 yinelenen/).waitFor();await page.getByTitle('Seçilen orijinal PDF',{exact:true}).waitFor();checks+=2;
@@ -55,7 +65,7 @@ const {chromium}=require('@playwright/test');
   assert.ok(pdfRow);await page.getByRole('button',{name:pdfRow.parsed.title+' · PENDING_REVIEW',exact:true}).first().click();
   await page.getByRole('button',{name:'Orijinal PDF sayfalarını incele',exact:true}).click();await page.getByTitle('Saklanan kaynak PDF',{exact:true}).waitFor();checks++;
   await page.getByText('ÖSYM lisans / önlisans / ortaöğretim aktarımı',{exact:true}).press('Enter');
-  const historicalPdf=path.join(root,'tmp/pdfs','historical-browser-'+suffix+'.pdf');execFileSync('python',[path.join(root,'services/ingest/fixtures/make_historical_fixture.py'),historicalPdf,'BACHELOR',String(parseInt(suffix,16)%100000000)]);
+  const historicalPdf=path.join(root,'tmp/pdfs','historical-browser-'+suffix+'.pdf');execFileSync('python',[path.join(root,'services/ingest/fixtures/make_historical_fixture.py'),historicalPdf,'BACHELOR',String(parseInt(suffix,16)%100000000)],{windowsHide:true});
   await require('@playwright/test').expect(page.getByLabel('ÖSYM sonuç PDF',{exact:true})).toBeVisible();await page.getByLabel('ÖSYM sonuç PDF',{exact:true}).setInputFiles(historicalPdf);await page.getByRole('button',{name:"ÖSYM PDF staging'e aktar",exact:true}).click();await page.getByText(/1 satır · 2024\/1 · BACHELOR/).waitFor();checks++;
   const historicalSha=require('node:crypto').createHash('sha256').update(require('node:fs').readFileSync(historicalPdf)).digest('hex');const batch=await db.importBatch.findFirst({where:{sourceSha256:historicalSha}});assert.ok(batch);
   await page.getByRole('button',{name:'ÖSYM partilerini getir',exact:true}).click();await page.getByRole('row').filter({hasText:historicalSha.slice(0,16)}).getByRole('button',{name:'İncele',exact:true}).click();await page.getByRole('button',{name:'ÖSYM kaynak PDF önizle',exact:true}).click();await page.getByTitle('ÖSYM kaynak PDF',{exact:true}).waitFor();checks++;
@@ -65,6 +75,6 @@ const {chromium}=require('@playwright/test');
   await page.getByRole('button',{name:'Kuyruğu getir',exact:true}).click();await page.getByText(/Oturum süresi doldu/).waitFor();checks++;
   await login();await page.getByRole('button',{name:'Çıkış yap',exact:true}).click();await require('@playwright/test').expect(page.getByRole('button',{name:'Kuyruğu getir'})).toBeDisabled();checks++;
   await db.user.update({where:{id:user.id},data:{role:'USER'}});await page.getByLabel('E-posta',{exact:true}).fill(email);await page.getByLabel('Parola',{exact:true}).fill(password);await page.getByRole('button',{name:'Hesapla giriş yap'}).click();await page.getByText(/yönetim yetkisi yok/).waitFor();checks++;
-  console.log(JSON.stringify({status:'PASS',browser:'installed Edge via Playwright',checks,syntheticOnly:true,deviceChecks:0}));
- }catch(error){if(page){require('node:fs').writeFileSync(path.join(root,'tmp','admin-browser-failure.txt'),await page.locator('body').innerText());await page.screenshot({path:path.join(root,'tmp','admin-browser-failure.png'),fullPage:true});}throw error;}finally{if(browser)await browser.close();vite.kill();await app.close();await db.candidateSession.deleteMany({where:{userId:user.id}});await db.user.delete({where:{id:user.id}});await db.$disconnect();}
+  console.log(JSON.stringify({status:'PASS',browser:process.platform==='win32'?'installed Edge via Playwright':'Chromium via Playwright',checks,syntheticOnly:true,deviceChecks:0}));
+ }catch(error){if(page){require('node:fs').writeFileSync(path.join(root,'tmp','admin-browser-failure.txt'),await page.locator('body').innerText());await page.screenshot({path:path.join(root,'tmp','admin-browser-failure.png'),fullPage:true});}throw error;}finally{Object.assign(registry.energy,originalEnergy);if(browser)await browser.close();vite.kill();await app.close();await db.candidateSession.deleteMany({where:{userId:user.id}});await db.user.delete({where:{id:user.id}});await db.$disconnect();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
