@@ -1,4 +1,4 @@
-param([ValidateSet('start','stop','status')][string]$Action='start')
+param([ValidateSet('start','stop','status','diagnose')][string]$Action='start')
 $ErrorActionPreference='Stop'
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $privateFolder = Join-Path $projectRoot '.local\dev-process'

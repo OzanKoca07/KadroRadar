@@ -1,0 +1,28 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+const {parseState,readState,sameRoot,verify}=require('./dev-state.cjs');
+const root=path.resolve(__dirname,'..'),runId='a'.repeat(32),created='2026-10-31T09:00:00.000Z';
+const state={version:2,root,runId,pid:100,startedAt:created,ownerCreated:created,services:[{name:'api',pid:101,created}]};
+const records=[{pid:100,parent:90,created,kind:'owner'},{pid:101,parent:100,created,kind:'api'}];
+let checks=0;const bad=(fn,detail)=>{assert.throws(fn,e=>e.message==='DEV_STATE_INVALID'&&e.detail===detail);checks++;};
+assert.ok(sameRoot('C:\\projects\\KadroRadar','c:\\projects\\kadroradar','win32'));checks++;
+assert.ok(!sameRoot('/project/A','/project/a','linux'));checks++;
+assert.ok(!sameRoot(root,path.join(root,'another-project')));checks++;
+assert.equal(parseState('\uFEFF'+JSON.stringify(state),root).pid,100);checks++;
+assert.equal(verify(state,records),'ACTIVE');checks++;
+bad(()=>parseState('{',root),'JSON_INVALID');
+bad(()=>parseState(JSON.stringify({...state,root:path.dirname(root)}),root),'PROJECT_ROOT_MISMATCH');
+bad(()=>parseState(JSON.stringify({...state,runId:'invalid'}),root),'SCHEMA_INVALID');
+bad(()=>parseState(JSON.stringify({...state,services:[...state.services,...state.services]}),root),'SERVICES_INVALID');
+bad(()=>parseState(JSON.stringify({...state,services:[null]}),root),'SERVICES_INVALID');
+assert.equal(verify(state,[]),'STALE');checks++;
+bad(()=>verify(state,[records[1]]),'ORPHAN_CHILD_PRESENT');
+bad(()=>verify(state,[{...records[0],kind:'OTHER'},records[1]]),'OWNER_IDENTITY_MISMATCH');
+bad(()=>verify(state,[{...records[0],created:'2026-10-31T10:00:00.000Z'},records[1]]),'OWNER_CREATION_MISMATCH');
+for(const change of [{parent:999},{kind:'metro'},{created:'2026-10-31T09:00:01.000Z'}])bad(()=>verify(state,[records[0],{...records[1],...change}]),'CHILD_IDENTITY_MISMATCH');
+bad(()=>verify(state,[records[0]]),'CHILD_IDENTITY_MISMATCH');
+const legacy={...state,version:1,startedAt:'2026-10-31T09:00:00.100Z'};
+assert.equal(verify(legacy,records),'ACTIVE');checks++;
+bad(()=>verify({...legacy,startedAt:'2026-10-31T10:00:00.000Z'},records),'OWNER_CREATION_MISMATCH');
+const dir=fs.mkdtempSync(path.join(os.tmpdir(),'kadroradar-dev-state-'));
+try{assert.equal(readState(path.join(dir,'missing'),root),null);checks++;fs.writeFileSync(path.join(dir,'state.json'),'{');bad(()=>readState(path.join(dir,'state.json'),root),'JSON_INVALID');assert.equal(fs.readFileSync(path.join(dir,'state.json'),'utf8'),'{');checks++;}finally{fs.unlinkSync(path.join(dir,'state.json'));fs.rmdirSync(dir);}
+console.log(JSON.stringify({status:'PASS',test:'dev-state',checks,pidReuseRejected:true,corruptStatePreserved:true}));

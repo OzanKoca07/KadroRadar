@@ -76,6 +76,9 @@
     "apps/mobile/metro.config.js",
     "infra/dev.cjs",
     "infra/dev.ps1",
+    "infra/dev-state.cjs",
+    "infra/dev-process-identity.ps1",
+    "infra/test-dev-state.cjs",
     "infra/test-dev-process.cjs",
     "apps/api/test-admin-browser.cjs"
   ],
@@ -88,7 +91,8 @@
     "infra/official-career-notice.sql.example",
     "infra/source-worker.workflow.example.yml",
     "docs/RELEASE_DEPLOYMENT_FINAL_CHECK.md",
-    "docs/CI_AND_WINDOWS_PROCESS_FIX.md"
+    "docs/CI_AND_WINDOWS_PROCESS_FIX.md",
+    "docs/DEV_STATE_RECOVERY.md"
   ],
   "separateOperatorReviewPreserveUnchanged": [
     "docs/ADMIN_STATUS_DIAGNOSIS.md",
