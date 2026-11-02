@@ -2,16 +2,18 @@ import {useCallback,useRef,useState} from 'react';
 import {useFocusEffect,router} from 'expo-router';
 import {FlatList,Text,View} from 'react-native';
 import {accountRequest,hasSession} from '../lib/account';
+import {useSession} from '../lib/use-session';
 import {publicItems} from '../lib/source-policy';
 import {announcementStatus,dateText,errorText,type Announcement} from '../lib/presentation';
 import {AuthGate,Badge,Button,Card,EmptyState,ErrorState,Heading,SkeletonCards} from '../ui/components';
 import {ui} from '../ui/theme';
 type SavedRow={announcementId:string;announcement:Announcement};
 export default function Saved(){
+ const logged=useSession();
  const [rows,setRows]=useState<SavedRow[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(true),[removing,setRemoving]=useState(''),request=useRef(0);
- const load=useCallback(async()=>{const current=++request.current;setBusy(true);setError('');if(!hasSession()){setBusy(false);return;}try{const result=await accountRequest('/account/saved');if(current===request.current)setRows(publicItems(result));}catch(e){if(current===request.current)setError(errorText(e));}finally{if(current===request.current)setBusy(false);}},[]);
+ const load=useCallback(async()=>{const current=++request.current;setBusy(true);setError('');if(!hasSession()){setRows([]);setBusy(false);return;}try{const result=await accountRequest('/account/saved');if(current===request.current)setRows(publicItems(result));}catch(e){if(current===request.current)setError(errorText(e));}finally{if(current===request.current)setBusy(false);}},[logged]);
  useFocusEffect(useCallback(()=>{void load();return()=>{request.current++;};},[load]));
- if(!hasSession())return <AuthGate title="Kaydedilenler" destination="/saved" message="Kaydettiklerini görmek için giriş yap."/>;
+ if(!logged)return <AuthGate title="Kaydedilenler" destination="/saved" message="Kaydettiklerini görmek için giriş yap."/>;
  return <View style={ui.root}><FlatList data={busy||error?[]:rows} keyExtractor={r=>r.announcementId} contentContainerStyle={ui.content} refreshing={busy} onRefresh={load}
   ListHeaderComponent={<View style={{gap:16}}><Heading title="Kaydedilenler" description="Kaydettiğin ilanların son başvuru tarihlerini ve güncel durumlarını takip et."/>{error?<ErrorState message={error} onRetry={load}/>:busy?<SkeletonCards/>:null}</View>}
   ListEmptyComponent={!busy&&!error?<EmptyState icon="bookmark-outline" title="Kaydedilen ilan yok" description="İlan detayındaki kaydet düğmesiyle ilgilendiğin fırsatları burada toplayabilirsin." action={{title:'İlanları keşfet',onPress:()=>router.push('/announcements')}}/>:null}

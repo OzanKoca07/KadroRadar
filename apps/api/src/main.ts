@@ -16,6 +16,7 @@ async function bootstrap(){
   const cleanup=setInterval(()=>{const now=Date.now(); for(const [key,bucket] of buckets) if(bucket.reset<=now) buckets.delete(key);},60000);
   cleanup.unref();
   app.use((req:any,res:any,next:()=>void)=>{
+    if(req.path.startsWith('/account-recovery')){res.setHeader('Content-Security-Policy',"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'");res.setHeader('X-Frame-Options','DENY');}
     res.setHeader('X-Content-Type-Options','nosniff');
     res.setHeader('Referrer-Policy','no-referrer');
     res.setHeader('Cache-Control','no-store');
@@ -35,7 +36,7 @@ async function bootstrap(){
     app.useStaticAssets(join(publicRoot,'legal'),{prefix:'/legal/'});
     const server=app.getHttpAdapter().getInstance();
     server.get('/admin',(_req:any,res:any)=>res.redirect('/admin/'));
-    for(const page of ['privacy','delete-account']) server.get('/'+page,(_req:any,res:any)=>res.sendFile(join(publicRoot,'legal',page+'.html')));
+    for(const page of ['privacy','delete-account','account-recovery']) server.get('/'+page,(_req:any,res:any)=>res.sendFile(join(publicRoot,'legal',page+'.html')));
   }
   const port=Number(process.env.PORT||process.env.API_PORT||3000);
   if(!Number.isInteger(port)||port<1||port>65535) throw new Error('Invalid HTTP port');

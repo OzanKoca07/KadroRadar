@@ -29,18 +29,19 @@ async function cli(args,env=[]){return docker('exec',...env.flatMap(([key,value]
  const settings=JSON.parse(docker('exec',api,'node','-e',"console.log(JSON.stringify(Object.fromEntries(['NODE_ENV','DOCUMENT_UPLOADS_ENABLED','SOURCE_SYNC_ENABLED','NOTIFICATIONS_ENABLED','ALLOW_SELF_REGISTRATION'].map(k=>[k,process.env[k]]))))"));
  assert.equal(settings.NODE_ENV,'production');for(const flag of ['DOCUMENT_UPLOADS_ENABLED','SOURCE_SYNC_ENABLED','NOTIFICATIONS_ENABLED','ALLOW_SELF_REGISTRATION'])assert.equal(settings[flag],'false');
  checks.push('production image defaults: all four Free-sensitive features disabled');
- const capability=await request('/api/v1/account/capabilities');assert.equal(capability.status,200);assert.equal((await capability.json()).selfRegistration,false);
+ const capability=await request('/api/v1/account/capabilities');assert.equal(capability.status,200);const capabilities=await capability.json();assert.equal(capabilities.selfRegistration,false);assert.equal(capabilities.passwordReset,false);assert.equal(capabilities.emailVerification,false);assert.equal(docker('exec',api,'printenv','ACCOUNT_RECOVERY_ENABLED'),'false');
  checks.push('current account capability route available; registration remains disabled');
  for(const route of ['/admin/','/privacy','/delete-account','/legal/legal.js','/legal/legal.css','/legal/public-config.js'])assert.equal((await request(route)).status,200,route);
  const admin=await(await request('/admin/')).text(),asset=admin.match(/src="([^"]+\.js)"/)?.[1];assert.ok(asset?.startsWith('/admin/assets/'));const bundle=await(await request(asset)).text();assert.ok(bundle.includes('/api/v1'));assert.ok(!bundle.includes('http://localhost:3000/api/v1'));
  checks.push('admin/legal pages and assets served; admin uses relative production API');
+ const recovery=await request('/account-recovery');assert.equal(recovery.status,200);assert.match(recovery.headers.get('content-security-policy'),/connect-src 'self'/);assert.equal(recovery.headers.get('referrer-policy'),'no-referrer');assert.equal(recovery.headers.get('cache-control'),'no-store');assert.equal(recovery.headers.get('x-frame-options'),'DENY');const recoveryHtml=await recovery.text();assert.ok(recoveryHtml.includes('account-recovery.js'));for(const file of ['/account-recovery.js','/account-recovery.css'])assert.equal((await request(file)).status,200);checks.push('real production account-recovery route/assets; CSP/no-store/no-referrer/frame protection; recovery and registration disabled');
  phase='migration';
  const migration=['infra/render-database.cjs','migrate','db',database,'APPROVE'];
- await cli(migration);assert.equal(sql('SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL'),'15');
+ await cli(migration);assert.equal(sql('SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL'),'16');
  await cli(['infra/render-database.cjs','status','db',database]);
- await cli(migration);assert.equal(sql('SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL'),'15');
+ await cli(migration);assert.equal(sql('SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL'),'16');
  assert.equal(sql('SELECT count(*) FROM "User"'),'0');assert.equal(sql('SELECT count(*) FROM "HistoricalPlacement"'),'0');
- checks.push('15 explicit isolated migrations; second deploy idempotent; no default account or historical seed');
+ checks.push('16 explicit isolated migrations; second deploy idempotent; no default account or historical seed');
  phase='empty API';
  for(const route of ['/announcements','/announcements/archive','/announcements?view=all','/historical/placements','/historical/placements?educationLevel=BACHELOR','/historical/placements?educationLevel=ASSOCIATE','/historical/placements?educationLevel=HIGH_SCHOOL']){const response=await request('/api/v1'+route);assert.equal(response.status,200,route);const body=await response.json();assert.equal(body.total,0);assert.deepEqual(body.items,[]);}
  const rounds=await request('/api/v1/historical/rounds');assert.deepEqual(await rounds.json(),[]);
@@ -58,6 +59,7 @@ async function cli(args,env=[]){return docker('exec',...env.flatMap(([key,value]
  assert.throws(()=>docker('exec','-e','NEW_ADMIN_EMAIL='+email,'-e','NEW_ADMIN_PASSWORD='+adminPassword,'-e','NEW_ADMIN_ROLE=SYSTEM_ADMIN',api,'node','apps/api/create-admin.cjs','--create'));
  assert.equal(sql('SELECT role FROM "User"'),'CONTENT_EDITOR');assert.equal(sql('SELECT count(*) FROM "User"'),'1');
  checks.push('explicit isolated operator provisioning; password hashed; duplicate cannot elevate role');
+ const signed=await request('/api/v1/account/login',{method:'POST',headers:{'content-type':'application/json','x-client-platform':'mobile'},body:JSON.stringify({email,password:adminPassword})});assert.equal(signed.status,201);const session=await signed.json();assert.equal(session.role,'CONTENT_EDITOR');assert.match(session.token,/^[a-f0-9]{64}$/);assert.match(signed.headers.get('set-cookie'),/HttpOnly/);assert.match(signed.headers.get('set-cookie'),/Secure/);assert.equal((await request('/api/v1/admin/announcement-imports',{headers:{authorization:'Bearer '+session.token}})).status,200);assert.equal((await request('/api/v1/account/logout',{method:'POST',headers:{authorization:'Bearer '+session.token,'content-type':'application/json'},body:'{}'})).status,201);assert.equal((await request('/api/v1/admin/announcement-imports',{headers:{authorization:'Bearer '+session.token}})).status,401);checks.push('Linux production admin login/RBAC and secure cookie; logout revokes isolated session');
  console.log('PASS: empty database, explicit migration, static pages and provisioning');
  docker('stop',db);
  phase='database outage';

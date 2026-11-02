@@ -1,13 +1,15 @@
 import {useEffect,useState} from 'react';
 import {router,useLocalSearchParams} from 'expo-router';
 import {Text,View} from 'react-native';
-import {accountRequest,hasSession} from '../../lib/account';
+import {accountRequest} from '../../lib/account';
+import {useSession} from '../../lib/use-session';
 import {announcementDetailRequest} from '../../lib/announcement-api';
 import {announcementStatus,dateTimeText,educationLabel,errorText,type Announcement} from '../../lib/presentation';
 import {Badge,Button,Card,ErrorState,Fact,Heading,Independence,Notice,OfficialLink,Screen,SkeletonCards} from '../../ui/components';
 import {ui} from '../../ui/theme';
 type Match={positionId:string;title:string;outcome:string;reasons:{reason:string}[]};
 export default function Detail(){
+ const logged=useSession();
  const {id}=useLocalSearchParams<{id:string}>();
  const [item,setItem]=useState<Announcement|null>(null),[error,setError]=useState(''),[retry,setRetry]=useState(0),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
  const [matches,setMatches]=useState<{items:Match[];emptyReason?:string}|null>(null);
@@ -16,7 +18,7 @@ export default function Detail(){
  return <Screen>{error?<ErrorState message={error} onRetry={()=>setRetry(k=>k+1)}/>:!item?<SkeletonCards/>:<>
   <Badge text={announcementStatus(item)} tone={announcementStatus(item)==='Başvuru açık'?'success':'warning'}/><Heading title={item.title} description={item.organization}/>
   <Card><Text style={ui.heading}>Bir bakışta</Text><Fact label="Kadro" value={item.positionTitle||'Belirtilmemiş'}/><Fact label="Şehir" value={item.city||'Belirtilmemiş'}/><Fact label="Kontenjan" value={item.quota??'Belirtilmemiş'}/>{item.educationLevel&&<Fact label="Eğitim" value={educationLabel(item.educationLevel)}/>}<Fact label="Başvuru başlangıcı" value={dateTimeText(item.applicationStartAt)}/><Fact label="Son başvuru" value={dateTimeText(item.applicationEndAt)}/></Card>
-  {hasSession()?<>  <Button title="İlanı kaydet" icon="bookmark-outline" disabled={busy} onPress={()=>void action(async()=>{await accountRequest('/account/saved/'+encodeURIComponent(id),'PUT',{});setMessage('İlan kaydedildi. Değişikliklerini Kaydedilenler ekranından takip edebilirsin.');})}/>
+  {logged?<>  <Button title="İlanı kaydet" icon="bookmark-outline" disabled={busy} onPress={()=>void action(async()=>{await accountRequest('/account/saved/'+encodeURIComponent(id),'PUT',{});setMessage('İlan kaydedildi. Değişikliklerini Kaydedilenler ekranından takip edebilirsin.');})}/>
   <Button title="Profilimle karşılaştır" icon="checkmark-circle-outline" variant="secondary" disabled={busy} onPress={()=>void action(async()=>setMatches(await accountRequest('/account/matches/'+encodeURIComponent(id))))}/>
   </>:<Button title="Kaydetmek veya karşılaştırmak için giriş yap" onPress={()=>router.push({pathname:'/profile',params:{returnAnnouncement:id}})}/>}
   {!!message&&<Text accessibilityRole="alert" style={ui.body}>{message}</Text>}

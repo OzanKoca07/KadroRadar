@@ -47,6 +47,7 @@ jobs:
       - run: pip install -r services/ingest/requirements.txt
       - run: python -m unittest discover -s services/ingest/tests -v
       - run: python -m unittest discover -s services/ingest -p test_official_rss.py -v
+      - run: python -m unittest discover -s services/ingest -p test_gazette_download.py -v
       - run: python -m unittest discover -s services/ingest -p test_source_adapters.py -v
       - run: python -m unittest discover -s services/ingest -p test_source_probe.py -v
       - run: python -m unittest discover -s services/ingest -p test_feed_metadata.py -v
@@ -70,6 +71,8 @@ jobs:
       DATABASE_URL: postgresql://kadro:test_only@localhost:5432/kadroradar_ingestion_test_ci
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
         with:
           version: 9.15.4
@@ -88,7 +91,19 @@ jobs:
       - run: node test-environment.cjs && node test-manual-file.cjs && node test-indexing-policy.cjs && node test-source-operations.cjs && node test-announcement-scan.cjs && node test-announcement-contract.cjs && node test-announcement-network.cjs && node test-multisource.cjs && node test-source-worker-process.cjs
         working-directory: apps/api
       - run: node apps/api/test-auth-capacity.cjs
+      - run: node apps/api/test-auth-readiness.cjs
+      - run: node apps/api/test-gazette-downloader.cjs
+      - run: node apps/api/test-auth-recovery-draft.cjs
+      - run: node apps/api/test-account-recovery.cjs
+      - run: node apps/api/test-account-mail.cjs
+      - run: node infra/test-migration16-restore.cjs
+      - run: node infra/test-migration16-connection.cjs
+      - run: node infra/test-migration16-backup.cjs
+      - run: node infra/test-migration16-deploy.cjs
+      - run: node infra/test-mobile-session.cjs
+      - run: node infra/test-secure-store-config.cjs
       - run: pnpm --filter @kadro/admin exec playwright install --with-deps chromium
+      - run: node apps/api/test-recovery-browser.cjs
       - run: node apps/api/test-admin-browser.cjs
       - run: node apps/api/test-legal-browser.cjs
       - run: node apps/api/test-historical-import.cjs

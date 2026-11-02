@@ -5,6 +5,7 @@ import {passwordHash,passwordMatches} from './password';
 import {evaluate, Requirements} from './eligibility';
 import {resolve} from 'node:path';
 import {NotificationService} from './notifications';
+import {AccountRecovery} from './account-recovery';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 @Injectable()
@@ -32,9 +33,21 @@ export class CandidateAuth {
 }
 @Controller('account')
 export class CandidateController {
-  constructor(private db: CandidateDb, private auth: CandidateAuth, private notifications:NotificationService) {}
+  readonly recovery:AccountRecovery;
+  constructor(private db: CandidateDb, private auth: CandidateAuth, private notifications:NotificationService) {this.recovery=new AccountRecovery(db);}
   @Get('capabilities')
-  capabilities(){return {selfRegistration:process.env.ALLOW_SELF_REGISTRATION==='true',passwordMinLength:12,passwordMaxLength:128};}
+  capabilities(){return {selfRegistration:process.env.ALLOW_SELF_REGISTRATION==='true',passwordMinLength:12,passwordMaxLength:128,emailVerification:this.recovery.available(),passwordReset:this.recovery.available()};}
+  @Get('security')
+  async security(@Req() req:any){return this.recovery.status(await this.auth.user(req));}
+  private async recoveryMutation(req:any){this.recovery.origin(req);if(req.headers.cookie?.split(';').some((v:string)=>v.trim().startsWith('kr_session=')))await this.auth.user(req,true);}
+  @Post('email-verification/request')
+  async verificationRequest(@Req() req:any,@Res({passthrough:true}) res:any){await this.recoveryMutation(req);const user=await this.auth.role(req,['USER'],true);res.status(202);return this.recovery.request('VERIFY_EMAIL',user.email,req.ip||'unknown');}
+  @Post('email-verification/confirm')
+  async verificationConfirm(@Req() req:any,@Body() body:any){await this.recoveryMutation(req);return this.recovery.confirm('VERIFY_EMAIL',body?.token,null,req.ip||'unknown');}
+  @Post('password-reset/request')
+  async resetRequest(@Req() req:any,@Body() body:any,@Res({passthrough:true}) res:any){await this.recoveryMutation(req);res.status(202);return this.recovery.request('RESET_PASSWORD',body?.email,req.ip||'unknown');}
+  @Post('password-reset/confirm')
+  async resetConfirm(@Req() req:any,@Body() body:any){await this.recoveryMutation(req);return this.recovery.confirm('RESET_PASSWORD',body?.token,body?.password,req.ip||'unknown');}
   private async rate(req:any,scope:string,limit:number){
     const key=hash(`${scope}:${req.ip || req.socket.remoteAddress || 'unknown'}`);
     const accepted=await this.db.$transaction(async tx=>{
@@ -67,7 +80,14 @@ export class CandidateController {
     if (!user || user.deletedAt || !valid) throw new UnauthorizedException();
     const token = randomBytes(32).toString('hex'), csrf = randomBytes(32).toString('hex');
     const expiresAt = new Date(now + 8 * 3600000);
-    await this.db.candidateSession.create({data: {id: hash(token), userId: user.id, csrfHash: hash(csrf), expiresAt}});
+    await this.db.$transaction(async tx=>{
+      // Serialize session creation with account deletion/password recovery. An old
+      // password validated before a reset cannot create a session after revocation.
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id"=${user.id} FOR UPDATE`;
+      const current=await tx.user.findUnique({where:{id:user.id}});
+      if(!current||current.deletedAt||current.passwordHash!==user.passwordHash)throw new UnauthorizedException();
+      await tx.candidateSession.create({data: {id: hash(token), userId: user.id, csrfHash: hash(csrf), expiresAt}});
+    });
     res.setHeader('Cache-Control','no-store');
     res.cookie('kr_session',token,{httpOnly:true,secure:process.env.NODE_ENV === 'production',sameSite:'strict',maxAge:8*3600000,path:'/api/v1'});
     return {csrfToken: csrf, expiresAt, role:user.role, ...(req.headers['x-client-platform'] === 'mobile' ? {token} : {})};
@@ -79,7 +99,7 @@ export class CandidateController {
     res.clearCookie('kr_session',{path:'/api/v1'}); return {loggedOut:true};
   }
   @Get('profile')
-  async profile(@Req() req: any) {const user = await this.auth.user(req); return this.db.candidateProfile.findUnique({where:{userId:user.id}});}
+  async profile(@Req() req: any) {const user = await this.auth.user(req); return await this.db.candidateProfile.findUnique({where:{userId:user.id}}) ?? {};}
   @Get('data')
   async exportData(@Req() req:any){const user=await this.auth.user(req);return {account:{email:user.email,createdAt:user.createdAt},profile:await this.db.candidateProfile.findUnique({where:{userId:user.id},select:{educationLevel:true,exactDegreeProgramCode:true,kpssScore:true,kpssScoreType:true,examYear:true,preferredCities:true,ydsScore:true,certificates:true,notificationConsent:true}}),saved:await this.db.savedAnnouncement.findMany({where:{userId:user.id},select:{announcementId:true,createdAt:true}})};}
   @Put('push')
@@ -113,7 +133,7 @@ export class CandidateController {
   @Get('matches')
   async matchingList(@Req() req:any){const user=await this.auth.user(req);const page=Number(req.query.page??1);if(!Number.isSafeInteger(page)||page<1||page>10000)throw new BadRequestException('page');const profile=await this.db.candidateProfile.findUnique({where:{userId:user.id}});const now=new Date();const where={status:'PUBLISHED',publishedAt:{lte:now},sourceCheckedAt:{not:null},applicationStartAt:{lte:now},applicationEndAt:{gte:now}};const [items,total]=await this.db.$transaction([this.db.announcement.findMany({where,include:{positions:true},skip:(page-1)*20,take:20,orderBy:[{applicationEndAt:'asc'},{id:'asc'}]}),this.db.announcement.count({where})]);return {items:items.map(item=>({id:item.id,title:item.title,organization:item.organization,positions:item.positions.map(p=>({id:p.id,title:p.title,...evaluate(profile??{},p.requirements as Requirements,!!p.verifiedAt)}))})),page,pages:Math.ceil(total/20),total};}
   @Delete()
-  async remove(@Req() req:any){const user=await this.auth.user(req,true);await this.db.$transaction(async tx=>{await tx.candidateSession.deleteMany({where:{userId:user.id}});await tx.savedAnnouncement.deleteMany({where:{userId:user.id}});await tx.candidateNotification.deleteMany({where:{userId:user.id}});await tx.candidateProfile.deleteMany({where:{userId:user.id}});await tx.user.update({where:{id:user.id},data:{email:`deleted-${randomBytes(16).toString('hex')}@invalid.local`,passwordHash:'deleted',deletedAt:new Date()}});});return {deleted:true};}
+  async remove(@Req() req:any){const user=await this.auth.user(req,true);await this.db.$transaction(async tx=>{await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id"=${user.id} FOR UPDATE`;await tx.accountChallenge.deleteMany({where:{userId:user.id}});await tx.accountEmailVerification.deleteMany({where:{userId:user.id}});await tx.accountRecoveryAudit.deleteMany({where:{userId:user.id}});await tx.candidateSession.deleteMany({where:{userId:user.id}});await tx.savedAnnouncement.deleteMany({where:{userId:user.id}});await tx.candidateNotification.deleteMany({where:{userId:user.id}});await tx.candidateProfile.deleteMany({where:{userId:user.id}});await tx.user.update({where:{id:user.id},data:{email:`deleted-${randomBytes(16).toString('hex')}@invalid.local`,passwordHash:'deleted',deletedAt:new Date()}});});return {deleted:true};}
 }
 @Controller('admin/announcements')
 export class PositionController {

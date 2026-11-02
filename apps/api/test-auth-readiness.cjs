@@ -1,0 +1,37 @@
+require('./test-source-fixtures.cjs').permitManualFixtures();
+require('reflect-metadata');
+const assert=require('node:assert/strict'),{randomBytes,createHash}=require('node:crypto');
+let target;try{target=new URL(process.env.DATABASE_URL||'postgresql://invalid/invalid');}catch{throw Error('Isolated DB required');}
+if(!['postgres:','postgresql:'].includes(target.protocol)||!['127.0.0.1','localhost','db','[::1]'].includes(target.hostname)||!/^\/kadroradar_ingestion_test_/.test(target.pathname))throw Error('Isolated DB required');
+Object.assign(process.env,{ALLOW_SELF_REGISTRATION:'false',SOURCE_SYNC_ENABLED:'false',NOTIFICATIONS_ENABLED:'false',DOCUMENT_UPLOADS_ENABLED:'false',PROCESS_ROLE:'api',NODE_ENV:'production'});
+const {PrismaClient}=require('@prisma/client'),{NestFactory}=require('@nestjs/core'),{AppModule}=require('./dist/module');
+(async()=>{const db=new PrismaClient();let app,checks=0,phase='START';const suffix=randomBytes(8).toString('hex'),email=`auth-${suffix}@example.test`,password=randomBytes(24).toString('hex');
+try{
+ app=await NestFactory.create(AppModule,{logger:false});app.setGlobalPrefix('api/v1');await app.listen(0,'127.0.0.1');const base=await app.getUrl()+'/api/v1';
+ const resetRate=()=>db.authRateLimit.deleteMany({}); // Guarded disposable DB only.
+ async function req(path,{method='GET',body,token,status=200,mobile=true}={}){const r=await fetch(base+path,{method,headers:{'content-type':'application/json',...(mobile?{'x-client-platform':'mobile'}:{}),...(token?{authorization:'Bearer '+token}:{})},body:body===undefined?undefined:JSON.stringify(body)});const raw=await r.text();if(!raw.trim()){const error=Error();error.validationCode='EMPTY_JSON_BODY';throw error;}const data=JSON.parse(raw);assert.equal(r.status,status,path);checks++;return {data,headers:r.headers};}
+ const register=(data,status=201)=>req('/account/register',{method:'POST',body:data,status});
+ const login=(data,status=201,mobile=true)=>req('/account/login',{method:'POST',body:data,status,mobile});
+ phase='CLOSED';const before=await db.user.count();assert.deepEqual((await req('/account/capabilities')).data,{selfRegistration:false,passwordMinLength:12,passwordMaxLength:128,emailVerification:false,passwordReset:false});assert.equal((await register({email,password},403)).data.code,'REGISTRATION_DISABLED');assert.equal(await db.user.count(),before);checks++;
+ process.env.ALLOW_SELF_REGISTRATION='true';await resetRate();
+ phase='VALIDATION';for(const data of [{},{email:'bad',password},{email:'',password},{email,password:''},{email,password:'x'.repeat(11)},{email,password:'x'.repeat(129)},{email,password:123},{email:'x'.repeat(250)+'@example.test',password}])await register(data,400);
+ await resetRate();for(const length of [12,128])await register({email:`boundary-${length}-${suffix}@example.test`,password:'x'.repeat(length)});
+ await resetRate();await register({email:email.toUpperCase(),password,role:'SYSTEM_ADMIN'});await register({email,password},400);
+ const user=await db.user.findUniqueOrThrow({where:{email}});assert.equal(user.role,'USER');assert.notEqual(user.passwordHash,password);assert.ok(user.passwordHash.startsWith('scrypt-v2:'));checks++;
+ phase='CREDENTIALS';await resetRate();await login({email,password:password+'wrong'},401);await login({email:'bad',password},401);await login({},401);
+ const signed=await login({email,password}),token=signed.data.token;assert.match(token,/^[a-f0-9]{64}$/);assert.match(signed.data.csrfToken,/^[a-f0-9]{64}$/);assert.notEqual(token,signed.data.csrfToken);assert.match(signed.headers.get('cache-control'),/no-store/);assert.match(signed.headers.get('set-cookie'),/HttpOnly/);assert.match(signed.headers.get('set-cookie'),/Secure/);assert.match(signed.headers.get('set-cookie'),/SameSite=Strict/);checks++;
+ const session=await db.candidateSession.findUniqueOrThrow({where:{id:createHash('sha256').update(token).digest('hex')}});assert.notEqual(session.id,token);assert.notEqual(session.csrfHash,signed.data.csrfToken);assert.ok(session.expiresAt.getTime()>Date.now()+7.9*3600000&&session.expiresAt.getTime()<=Date.now()+8*3600000);checks++;
+ assert.equal((await login({email,password},201,false)).data.token,undefined);
+ phase='PROFILE_AND_RBAC';await req('/account/profile',{status:401});await req('/account/profile',{token:'unsigned',status:401});await req('/admin/announcement-imports',{token,status:403});assert.deepEqual((await req('/account/profile',{token})).data,{});
+ await req('/account/profile',{method:'PUT',token,body:{educationLevel:'LISANS',kpssScoreType:'P3',kpssScore:80,examYear:2024,preferredCities:['ANKARA','ANKARA']}});assert.deepEqual((await req('/account/profile',{token})).data.preferredCities,['ANKARA']);await req('/account/profile',{method:'PUT',token,body:{kpssScore:100.1},status:400});
+ phase='SAVES';const announcement=await db.announcement.create({data:{title:'SYNTHETIC auth test',organization:'ISOLATED TEST',sourceUrl:'https://enerji.gov.tr/auth-fixture-'+suffix,status:'PUBLISHED',publishedAt:new Date(),sourceCheckedAt:new Date(),applicationStartAt:new Date(Date.now()-1000),applicationEndAt:new Date(Date.now()+86400000)}});
+ for(let i=0;i<2;i++)await req('/account/saved/'+announcement.id,{method:'PUT',token,body:{}});assert.equal((await req('/account/saved',{token})).data.length,1);
+ for(let i=0;i<2;i++)await req('/account/saved/'+announcement.id,{method:'DELETE',token});assert.equal((await req('/account/saved',{token})).data.length,0);
+ phase='ISOLATION';const otherEmail='other-'+suffix+'@example.test';await register({email:otherEmail,password});const otherToken=(await login({email:otherEmail,password})).data.token;assert.deepEqual((await req('/account/profile',{token:otherToken})).data,{});assert.equal((await req('/account/saved',{token:otherToken})).data.length,0);
+ phase='EXPIRY';await db.candidateSession.update({where:{id:session.id},data:{expiresAt:new Date(Date.now()-1000)}});await req('/account/profile',{token,status:401});
+ phase='LOGOUT';await resetRate();const active=(await login({email,password})).data.token;await req('/account/logout',{method:'POST',token:active,body:{},status:201});await req('/account/profile',{token:active,status:401});assert.equal(await db.candidateSession.count({where:{userId:user.id}}),0);await req('/account/profile',{token:otherToken});
+ phase='DELETE';const deleting=(await login({email,password})).data.token;await req('/account/saved/'+announcement.id,{method:'PUT',token:deleting,body:{}});await req('/account',{method:'DELETE',token:deleting});await req('/account/profile',{token:deleting,status:401});await login({email,password},401);assert.equal(await db.user.findUnique({where:{email}}),null);assert.equal(await db.savedAnnouncement.count({where:{userId:user.id}}),0);assert.equal(await db.candidateProfile.count({where:{userId:user.id}}),0);checks++;
+ phase='RATE_LIMIT';await resetRate();for(let i=0;i<10;i++)await login({email,password:'wrong'},401);assert.equal((await login({email,password:'wrong'},403)).data.code,'AUTH_RATE_LIMITED');
+ await resetRate();for(let i=0;i<10;i++)await register({},400);assert.equal((await register({},403)).data.code,'AUTH_RATE_LIMITED');
+ console.log(JSON.stringify({status:'PASS',test:'auth-readiness',checks,productionWrites:0,sessionHours:8}));
+}catch(e){console.error(JSON.stringify({status:'FAIL',test:'auth-readiness',phase,kind:e.name,...(e.validationCode==='EMPTY_JSON_BODY'?{validationCode:e.validationCode}:{})}));process.exitCode=1;}finally{if(app)await app.close();await db.$disconnect();}})();

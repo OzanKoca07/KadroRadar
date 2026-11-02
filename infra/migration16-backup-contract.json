@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "postgres": 16,
+  "manifestSha256": "4366be6c893a8c389eb822dedf7b68bf032624cb4761bf18ec1ef7881a59d7b1",
+  "before": {
+    "tables": [
+      "Announcement",
+      "AnnouncementImportRow",
+      "AnnouncementPosition",
+      "AnnouncementReviewAudit",
+      "AnnouncementSourceReference",
+      "AuthRateLimit",
+      "CandidateNotification",
+      "CandidateProfile",
+      "CandidateSession",
+      "HistoricalPlacement",
+      "ImportBatch",
+      "ImportRow",
+      "PlacementRound",
+      "ReviewAudit",
+      "SavedAnnouncement",
+      "SourceDocument",
+      "SourceSyncState",
+      "User",
+      "_prisma_migrations"
+    ],
+    "catalogSha256": "b293335533af32ad77b653be71eda277d0088a9875422df16ecaf1888cda1300"
+  },
+  "after": {
+    "tables": [
+      "AccountChallenge",
+      "AccountEmailVerification",
+      "AccountRecoveryAudit",
+      "AccountRecoveryRate",
+      "Announcement",
+      "AnnouncementImportRow",
+      "AnnouncementPosition",
+      "AnnouncementReviewAudit",
+      "AnnouncementSourceReference",
+      "AuthRateLimit",
+      "CandidateNotification",
+      "CandidateProfile",
+      "CandidateSession",
+      "HistoricalPlacement",
+      "ImportBatch",
+      "ImportRow",
+      "PlacementRound",
+      "ReviewAudit",
+      "SavedAnnouncement",
+      "SourceDocument",
+      "SourceSyncState",
+      "User",
+      "_prisma_migrations"
+    ],
+    "catalogSha256": "70c3778b77d094b8939755e25177f7c5144a0b496a269da1ce867297e7e9eb93"
+  }
+}

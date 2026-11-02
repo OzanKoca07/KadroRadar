@@ -77,6 +77,8 @@ model User {
  profile CandidateProfile?
  sessions CandidateSession[]
  saved SavedAnnouncement[]
+ challenges AccountChallenge[]
+ emailVerification AccountEmailVerification?
 }
 model CandidateProfile {
  id String @id @default(cuid())
@@ -242,4 +244,38 @@ model AnnouncementSourceReference {
  importRow AnnouncementImportRow @relation(fields:[importRowId],references:[id])
  evidence Json
  createdAt DateTime @default(now())
+}
+
+// Account recovery is additive; no existing role/session/login policy changes.
+model AccountChallenge {
+ id String @id @default(cuid())
+ userId String
+ user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+ purpose String
+ tokenHash String @unique
+ emailHash String
+ createdAt DateTime @default(now()) @db.Timestamptz(3)
+ expiresAt DateTime @db.Timestamptz(3)
+ consumedAt DateTime? @db.Timestamptz(3)
+ @@index([expiresAt])
+}
+model AccountEmailVerification {
+ userId String @id
+ user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+ emailHash String
+ verifiedAt DateTime @default(now()) @db.Timestamptz(3)
+}
+model AccountRecoveryRate {
+ id String @id
+ count Int
+ until DateTime @db.Timestamptz(3)
+ @@index([until])
+}
+// No token, address, request body or network identifier in audit events.
+model AccountRecoveryAudit {
+ id String @id @default(cuid())
+ userId String?
+ action String
+ createdAt DateTime @default(now()) @db.Timestamptz(3)
+ @@index([createdAt])
 }
