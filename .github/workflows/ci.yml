@@ -14,6 +14,8 @@ jobs:
       - run: node infra/test-dev-process.cjs
       - run: ${{ matrix.shell }} -NoProfile -File .\infra\test-private-directory.ps1
         shell: powershell
+      - run: ${{ matrix.shell }} -NoProfile -File .\infra\test-release-http-smoke.ps1
+        shell: powershell
   render-runtime:
     runs-on: ubuntu-latest
     steps:
@@ -96,6 +98,7 @@ jobs:
       - run: node apps/api/test-auth-recovery-draft.cjs
       - run: node apps/api/test-account-recovery.cjs
       - run: node apps/api/test-account-mail.cjs
+      - run: node infra/test-legacy-osym-contract.cjs
       - run: node infra/test-migration16-restore.cjs
       - run: node infra/test-migration16-connection.cjs
       - run: node infra/test-migration16-backup.cjs
