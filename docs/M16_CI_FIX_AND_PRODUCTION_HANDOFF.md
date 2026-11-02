@@ -8,8 +8,17 @@ GitHub CLI kurulu değil. Public Actions API ile gerçek run/job/step sonuçlar�
 
 Temiz HEAD Git arşiviyle, korunan yerel operatör değişiklikleri olmadan hata yeniden üretildi: statusFAIL, phaseSEED_SYNTHETIC, kindAssertionError, exit1. Hatalı test `require('./osym-production.cjs')` üzerinden yerel, commit edilmemiş operatörün `PF_LOCAL_MIGRATION_COUNT` kodunu bekliyordu. Commit edilmiş legacy operatör aynı16 yerel migration'ı `assert.equal(names.length,15)` ile reddeder: ERR_ASSERTION, actual16, expected15, validationCode yoktur. Testin dış assertion'ı bu nedenle undefined yerine PF_LOCAL_MIGRATION_COUNT bekleyip başarısız olur. Yerel makinedeki korunan sürüm bu kodu taşıdığı için önceki testler yanlış çalışma ağacı sözleşmesine bağlanmıştı.
 
+## CI18 ile ortaya çıkan ikinci hata
+
+İlk düzeltme commit’i `527304c6c72868b1e0a93dfd10322fe3bc0266ac` feature branch’e push edildi. [CI18](https://github.com/OzanKoca07/KadroRadar/actions/runs/41522401665) legacy/restore/connection/backup/deploy adımlarını geçti; admin-browser testinin son USER-role login aşamasında durdu. Kullanıcının gerçek logunda loginPOST403 ve test-admin-browser.cjs:77 yönetim yetkisi yok locator timeout var. ProfilPUT403, kaynak reviewPOST403 ve expired sessionGET401 bu testin beklenen güvenlik retleridir; bunlar görmezden gelinmedi.
+
+Aynı CI test sırası boş16 şemada yeniden çalıştırıldığında aynı satırda TimeoutError üretildi. Root cause: önceki account-recovery testi ortak loopback login anahtarında8 giriş denemesi bırakır; browser testinin üçüncü login’i aynı15dk/10 deneme bütçesini aşar. Bu production auth hatası veya kaynak lisans bypass ihtiyacı değildir; shared test fixture durum sızıntısıdır.
+
+`apps/api/test-admin-browser.cjs` artık yalnız guarded disposable DB’de loopback login fixture’ını açıkça başlatır/temizler. Limiter’ın gerçekten çalıştığı ayrıca kanıtlanır: count10 preseed edilir, gerçek login403/AUTH_RATE_LIMITED beklenir, yalnız o fixture anahtarı temizlenir; başka rate-limit sentinel kaydı değişmeden kalır. Normal UI login’lerde201 yanıtı açıkça assert edilir; rate-limit hatası role locator timeout’una dönüşmez. CSRF/RBAC/license/session assertion’ları ve gerçek limiter politikası değişmez.
+
 ## 2. Düzeltme ve değişen dosyalar
 
+- `apps/api/test-admin-browser.cjs`: yukarıdaki izole login fixture ve ek rate-limit assertion’ları; üretim auth kodu değişmez.
 - `infra/test-legacy-osym-contract.cjs`: compatibility subject'ini immutable release `4e5b86c5de22210eef254b682df6890ba96c4bca` Git nesnesinden yükler. Kaynak kod dönüşümü yoktur; module filename yalnız kök dosya yollarını doğru çözmek için sanaldır. Beklenen ret name/code/actual16/expected15/operator alanlarıyla tam doğrulanır. Yerel operatör cache'i kasıtlı zehirlenerek ona başvurulmadığı ve beklenmeyen hatanın reddedildiği test edilir.
 - `infra/test-migration16-restore.cjs`: aynı legacy ret kontrolünü bu pinned helper üzerinden yapar; hata phase'i PINNED_LEGACY_OPERATOR olarak ayrılır. Eski ret testi kaldırılmaz, restore/hash/admin/auth kontrolleri korunur.
 - `infra/release-http-smoke.ps1`: yalnız HTTPS GET; exact release SHA, health/db, historical8611, benzersiz/kararlı pagination, puan sınırları, capabilities/kapalı kayıt-recovery, ilan/news, legal/recovery/assets/header kontrolleri. Redirect reddi ve sınırlı timeout; ham hata/body/secret loglama yoktur.
@@ -29,6 +38,7 @@ Temiz HEAD Git arşiviyle, korunan yerel operatör değişiklikleri olmadan hata
 | PG16 connection / backup / deploy | 28 /23 /21 kontrol PASS; production erişimi yok |
 | API/admin build / mobil TypeScript | PASS |
 | Auth/admin/historical/source/Gazette/recovery | restore edilmiş sentetik PG16 runner22/22 PASS; bunun18'i uygulama test grubu |
+| CI sırası / browser fixture regresyonu | Boş16 şemada önce aynı77.satır hatası yeniden üretildi; düzeltmeden sonra35/35 ardışık test grubu PASS, browser/hesap silme/historical dahil |
 | Resend adapter / recovery browser / SecureStore | 18 /11 /23 kontrol PASS; gerçek mail/cihaz testi yok |
 | Python downloader / Career RSS | 12 /8 offline test PASS |
 | PowerShell GET smoke | 5.1 ve7 üzerinde15'er mock senaryo PASS; gerçek istek0 |

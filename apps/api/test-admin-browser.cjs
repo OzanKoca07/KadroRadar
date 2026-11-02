@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict');
 const path=require('node:path');
 const {spawn,execFileSync}=require('node:child_process');
-const {randomBytes}=require('node:crypto');
+const {randomBytes,createHash}=require('node:crypto');
 let testTarget;try{testTarget=new URL(process.env.DATABASE_URL||'postgresql://invalid/invalid');}catch{throw Error('Isolated DB required');}
 if(!['postgres:','postgresql:'].includes(testTarget.protocol)||!['localhost','127.0.0.1','db','[::1]'].includes(testTarget.hostname)||!/^\/kadroradar_ingestion_test_/.test(testTarget.pathname))throw Error('Isolated DB required');
 process.env.NODE_ENV='test';process.env.NOTIFICATIONS_ENABLED='false';process.env.SOURCE_SYNC_ENABLED='false';process.env.DOCUMENT_UPLOADS_ENABLED='true';
@@ -19,12 +19,19 @@ const originalEnergy=structuredClone(registry.energy);
  const app=await NestFactory.create(AppModule,{logger:false});app.enableCors({origin:'http://127.0.0.1:5179',credentials:true});app.setGlobalPrefix('api/v1');await app.listen(0,'127.0.0.1');
  const root=path.resolve(__dirname,'../..'),api=await app.getUrl()+'/api/v1';process.env.CORS_ORIGINS='http://127.0.0.1:5179';
  const vite=spawn(process.execPath,[path.resolve(root,'node_modules/vite/bin/vite.js'),'--host','127.0.0.1','--port','5179','--strictPort'],{cwd:path.resolve(root,'apps/admin'),env:{...process.env,VITE_API_BASE_URL:api},stdio:'ignore',windowsHide:true});
+ const loginRateId=createHash('sha256').update('login:127.0.0.1').digest('hex'),sentinelRateId=createHash('sha256').update('unrelated-browser-fixture:'+suffix).digest('hex');
  let browser,page;let checks=0;
  try{
+  // All suites share the disposable CI database and the loopback login key.
+  // Establish this suite's fixture boundary, without disabling/changing rate().
+  const until=new Date(Date.now()+15*60000);await db.authRateLimit.upsert({where:{id:loginRateId},create:{id:loginRateId,count:10,until},update:{count:10,until}});await db.authRateLimit.create({data:{id:sentinelRateId,count:7,until}});
+  const limited=await fetch(api+'/account/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email,password})});assert.equal(limited.status,403);assert.equal((await limited.json()).code,'AUTH_RATE_LIMITED');
+  await db.authRateLimit.delete({where:{id:loginRateId}});assert.equal((await db.authRateLimit.findUniqueOrThrow({where:{id:sentinelRateId}})).count,7);checks+=3;
   for(let i=0;i<100;i++){try{if((await fetch('http://127.0.0.1:5179')).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
   browser=await chromium.launch({...(process.platform==='win32'?{channel:'msedge'}:{}),headless:true});const context=await browser.newContext();page=await context.newPage();page.on('response',r=>{if(r.status()>=400){const u=new URL(r.url());console.log(JSON.stringify({event:'BROWSER_HTTP_FAILURE',method:r.request().method(),route:u.pathname.replace(/\/[a-z0-9]{20,}(?=\/|$)/g,'/:id'),status:r.status()}));}});page.on('console',message=>{if(message.type()==='warning'||message.type()==='error')console.error('Browser:',message.text());});
   await page.goto('http://127.0.0.1:5179');
-  const login=async()=>{await page.getByLabel('E-posta',{exact:true}).fill(email);await page.getByLabel('Parola',{exact:true}).fill(password);await page.getByRole('button',{name:'Hesapla giriş yap'}).click();await page.getByRole('button',{name:'Kuyruğu getir'}).waitFor({state:'visible'});await require('@playwright/test').expect(page.getByRole('button',{name:'Kuyruğu getir'})).toBeEnabled();};
+  const submitLogin=async()=>{const response=page.waitForResponse(r=>r.url()===api+'/account/login'&&r.request().method()==='POST');await page.getByLabel('E-posta',{exact:true}).fill(email);await page.getByLabel('Parola',{exact:true}).fill(password);await page.getByRole('button',{name:'Hesapla giriş yap'}).click();assert.equal((await response).status(),201,'Login must succeed before UI role/session assertions');};
+  const login=async()=>{await submitLogin();await page.getByRole('button',{name:'Kuyruğu getir'}).waitFor({state:'visible'});await require('@playwright/test').expect(page.getByRole('button',{name:'Kuyruğu getir'})).toBeEnabled();};
   await login();checks++;
   const cookies=await context.cookies(api);assert.ok(cookies.some(c=>c.name==='kr_session'&&c.httpOnly));checks++;
   const csrfResponse=await page.evaluate(async api=>(await fetch(api+'/account/profile',{method:'PUT',credentials:'include',headers:{'content-type':'application/json'},body:'{}'})).status,api);assert.equal(csrfResponse,403);checks++;
@@ -74,7 +81,7 @@ const originalEnergy=structuredClone(registry.energy);
   await db.candidateSession.updateMany({where:{userId:user.id},data:{expiresAt:new Date(0)}});
   await page.getByRole('button',{name:'Kuyruğu getir',exact:true}).click();await page.getByText(/Oturum süresi doldu/).waitFor();checks++;
   await login();await page.getByRole('button',{name:'Çıkış yap',exact:true}).click();await require('@playwright/test').expect(page.getByRole('button',{name:'Kuyruğu getir'})).toBeDisabled();checks++;
-  await db.user.update({where:{id:user.id},data:{role:'USER'}});await page.getByLabel('E-posta',{exact:true}).fill(email);await page.getByLabel('Parola',{exact:true}).fill(password);await page.getByRole('button',{name:'Hesapla giriş yap'}).click();await page.getByText(/yönetim yetkisi yok/).waitFor();checks++;
+  await db.user.update({where:{id:user.id},data:{role:'USER'}});await submitLogin();await page.getByText(/yönetim yetkisi yok/).waitFor();checks++;
   console.log(JSON.stringify({status:'PASS',browser:process.platform==='win32'?'installed Edge via Playwright':'Chromium via Playwright',checks,syntheticOnly:true,deviceChecks:0}));
- }catch(error){if(page){require('node:fs').writeFileSync(path.join(root,'tmp','admin-browser-failure.txt'),await page.locator('body').innerText());await page.screenshot({path:path.join(root,'tmp','admin-browser-failure.png'),fullPage:true});}throw error;}finally{Object.assign(registry.energy,originalEnergy);if(browser)await browser.close();vite.kill();await app.close();await db.candidateSession.deleteMany({where:{userId:user.id}});await db.user.delete({where:{id:user.id}});await db.$disconnect();}
+ }catch(error){if(page){require('node:fs').writeFileSync(path.join(root,'tmp','admin-browser-failure.txt'),await page.locator('body').innerText());await page.screenshot({path:path.join(root,'tmp','admin-browser-failure.png'),fullPage:true});}throw error;}finally{Object.assign(registry.energy,originalEnergy);if(browser)await browser.close();vite.kill();await app.close();await db.authRateLimit.deleteMany({where:{id:{in:[loginRateId,sentinelRateId]}}});await db.candidateSession.deleteMany({where:{userId:user.id}});await db.user.delete({where:{id:user.id}});await db.$disconnect();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
