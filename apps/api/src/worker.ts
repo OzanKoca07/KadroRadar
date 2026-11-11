@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import {NestFactory} from '@nestjs/core';
 import {AppModule} from './module';
 import {validateEnvironment} from './environment';
-import {SourceOperations} from './source-operations';
+import {SourceOperations,sourceAutomationBlocked} from './source-operations';
 import {scanMode} from './announcement-scan';
 
 async function bootstrap(){
@@ -11,6 +11,7 @@ async function bootstrap(){
  if(!['source-worker','push-worker'].includes(role||''))throw Error('Explicit worker PROCESS_ROLE required');
  if(process.env[role==='source-worker'?'SOURCE_SYNC_ENABLED':'NOTIFICATIONS_ENABLED']!=='true')throw Error('Explicit worker enable flag required');
  if(process.env.SOURCE_WORKER_ONCE==='true'&&role!=='source-worker')throw Error('One-shot requires source-worker');
+ if(role==='source-worker'&&sourceAutomationBlocked())throw Error('Source automation not approved');
  const app=await NestFactory.createApplicationContext(AppModule);
  app.enableShutdownHooks();
  console.log(JSON.stringify({event:'worker_started',processRole:role,httpListener:false}));

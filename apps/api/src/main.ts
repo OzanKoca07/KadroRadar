@@ -8,6 +8,16 @@ import {join} from 'node:path';
 async function bootstrap(){
   validateEnvironment(process.env);
   const app=await NestFactory.create<NestExpressApplication>(AppModule, {bodyParser: true});
+  // Only the signed machine-ingest route accepts a bounded multi-document report.
+  const sourceJson=require('express').json({limit:'8mb'});
+  // Nest detects installed parsers by function name, irrespective of mount path.
+  // Keep a distinct wrapper so its normal global jsonParser is still installed.
+  const sourceIngestJson=function sourceIngestJson(req:any,res:any,next:any){
+    if(process.env.SOURCE_REMOTE_INGEST_ENABLED!=='true'||process.env.SOURCE_AUTOMATION_APPROVED!=='true')return res.status(503).json({message:'Source ingest disabled'});
+    const auth=require(require('node:path').resolve(__dirname,'../../../packages/shared/source-ingest.cjs'));
+    if(req.method!=='POST'||!auth.verifyHeaders(process.env.SOURCE_INGEST_HMAC_KEY,process.env.SOURCE_INGEST_ORIGIN,req.originalUrl,req.headers))return res.status(401).json({message:'Source ingest denied'});
+    sourceJson(req,res,next);
+  };
   if(process.env.TRUST_PROXY_HOPS==='1') app.getHttpAdapter().getInstance().set('trust proxy',1);
   const origins=(process.env.CORS_ORIGINS || '').split(',').map(x=>x.trim()).filter(Boolean);
   if(process.env.NODE_ENV === 'production' && !origins.length) throw new Error('CORS_ORIGINS required');
@@ -26,6 +36,7 @@ async function bootstrap(){
     if(++bucket.count>120) {res.setHeader('Retry-After',Math.ceil((bucket.reset-now)/1000));res.status(429).json({message:'Too many requests'});return;}
     next();
   });
+  app.use('/api/v1/source-ingest',sourceIngestJson);
   app.enableShutdownHooks();
   // Docker includes the admin and legal pages on the API origin so secure
   // SameSite=Strict session cookies also work without a custom domain.
@@ -36,7 +47,7 @@ async function bootstrap(){
     app.useStaticAssets(join(publicRoot,'legal'),{prefix:'/legal/'});
     const server=app.getHttpAdapter().getInstance();
     server.get('/admin',(_req:any,res:any)=>res.redirect('/admin/'));
-    for(const page of ['privacy','delete-account','account-recovery']) server.get('/'+page,(_req:any,res:any)=>res.sendFile(join(publicRoot,'legal',page+'.html')));
+    for(const page of ['privacy','delete-account','account-recovery','terms']) server.get('/'+page,(_req:any,res:any)=>res.sendFile(join(publicRoot,'legal',page+'.html')));
   }
   const port=Number(process.env.PORT||process.env.API_PORT||3000);
   if(!Number.isInteger(port)||port<1||port>65535) throw new Error('Invalid HTTP port');

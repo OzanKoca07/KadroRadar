@@ -1,3 +1,4 @@
+import {applicationDates,pair} from './application-dates';
 import {resolve} from 'node:path';
 const registry=require(resolve(__dirname,'../../../packages/official-sources.json'));
 function officialLink(value:any):string|null{
@@ -6,10 +7,11 @@ function officialLink(value:any):string|null{
 function metadata(value:any):any{
  if(!value||typeof value!=='object')return null;
  const result:any={};
- for(const key of ['sourceId','categoryCode','category','kind','format','gazetteDate','gazetteNumber','pdfSha256','documentSha256','htmlSha256','pageStart','pageEnd','page','advertisementId','sectionStartLine','pageLocator']){
+ for(const key of ['sourceId','publicationMode','categoryCode','category','kind','format','gazetteDate','gazetteNumber','pdfSha256','documentSha256','htmlSha256','pageStart','pageEnd','page','advertisementId','sectionStartLine','pageLocator']){
   const v=value[key];if(v===null||typeof v==='number'&&Number.isFinite(v)||typeof v==='string'&&v.length<=200)result[key]=v;
  }
  for(const key of ['sourceUrl','indexUrl'])if(value[key])result[key]=officialLink(value[key]);
+ if(value.applicationDates){const dates=pair(value.applicationDates.start?.raw,value.applicationDates.end?.raw);result.applicationDates=dates;}
  if(value.index)result.index=metadata(value.index);
  return result;
 }
@@ -27,6 +29,7 @@ function criteria(value:any){
 export function publicAnnouncement(item:any){
  const result:any={};
  for(const key of ['id','status','title','organization','city','district','positionTitle','quota','educationLevel','applicationStartAt','applicationEndAt','announcedAt','sourceCheckedAt','publishedAt','updatedAt','createdAt','applicationStatus'])if(item[key]!==undefined)result[key]=item[key];
+ result.applicationDates=applicationDates(item);result.applicationStartDate=result.applicationDates.start.date;result.applicationEndDate=result.applicationDates.end.date;
  result.sourceUrl=officialLink(item.sourceUrl);result.applicationUrl=officialLink(item.applicationUrl);
  result.sourceEvidence=metadata(item.sourceEvidence);
  result.sourceReferences=(item.sourceReferences||[]).map((ref:any)=>({sourceUrl:officialLink(ref.importRow?.sourceUrl)||officialLink(ref.sourceUrl)||officialLink(ref.evidence?.sourceUrl),evidence:metadata(ref.evidence)}));

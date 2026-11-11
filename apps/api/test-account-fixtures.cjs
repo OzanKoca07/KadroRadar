@@ -1,0 +1,6 @@
+// Test-only mail/verification fixtures, guarded before touching any database.
+const {randomBytes,createHash}=require('node:crypto');
+function guard(){const u=new URL(process.env.DATABASE_URL||'https://invalid');if(!['postgres:','postgresql:'].includes(u.protocol)||!['localhost','127.0.0.1','db','[::1]'].includes(u.hostname)||!u.pathname.startsWith('/kadroradar_ingestion_test_'))throw Error('DISPOSABLE_ACCOUNT_FIXTURE_REQUIRED');}
+function mailFixture(app){guard();Object.assign(process.env,{ACCOUNT_RECOVERY_ENABLED:'true',ACCOUNT_MAIL_PROVIDER:'resend',RESEND_API_KEY:randomBytes(24).toString('hex'),ACCOUNT_MAIL_FROM:'accounts@example.test',ACCOUNT_RATE_HMAC_KEY:randomBytes(32).toString('hex'),ACCOUNT_RECOVERY_ORIGIN:'https://kadrooradar.com',CORS_ORIGINS:'https://kadrooradar.com'});const messages=[];app.get(require('./dist/candidate').CandidateController).recovery.mail={async send(to,link,purpose,id){messages.push({to,link,purpose,id});}};return messages;}
+async function verifiedCandidate(db,user){guard();return db.accountEmailVerification.upsert({where:{userId:user.id},create:{userId:user.id,emailHash:createHash('sha256').update(user.email).digest('hex')},update:{emailHash:createHash('sha256').update(user.email).digest('hex')}});}
+module.exports={mailFixture,verifiedCandidate,guard};

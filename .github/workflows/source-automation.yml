@@ -1,0 +1,56 @@
+# MANUAL ONLY. No cron; this file cannot scan or ingest while approval is false.
+name: Manual source automation pilot
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: kadroradar-source-ingest
+  cancel-in-progress: false
+jobs:
+  sources:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    environment: source-automation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Fail-closed approval gate
+        id: approval
+        env:
+          SOURCE_AUTOMATION_APPROVED: ${{ vars.SOURCE_AUTOMATION_APPROVED }}
+          SOURCE_RELEASE_SHA: ${{ vars.SOURCE_RELEASE_SHA }}
+          SOURCE_INGEST_HMAC_KEY: ${{ secrets.SOURCE_INGEST_HMAC_KEY }}
+        run: >-
+          node -e "const fs=require('fs');const a=process.env.SOURCE_AUTOMATION_APPROVED==='true';if(a&&(!/^[a-f0-9]{40}$/.test(process.env.SOURCE_RELEASE_SHA||'')||!/^[a-f0-9]{64}$/i.test(process.env.SOURCE_INGEST_HMAC_KEY||'')))throw Error('SOURCE_CONFIGURATION_INCOMPLETE');fs.appendFileSync(process.env.GITHUB_OUTPUT,'approved='+a+'\n');console.log(a?'APPROVED_CONFIGURATION':'AUTOMATION_DISABLED_NO_IO')"
+      - if: steps.approval.outputs.approved == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ vars.SOURCE_RELEASE_SHA }}
+      - if: steps.approval.outputs.approved == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - if: steps.approval.outputs.approved == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify approved source revision
+        if: steps.approval.outputs.approved == 'true'
+        env:
+          SOURCE_RELEASE_SHA: ${{ vars.SOURCE_RELEASE_SHA }}
+        run: node -e "const c=require('child_process');if(!/^[a-f0-9]{40}$/.test(process.env.SOURCE_RELEASE_SHA||'')||c.execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()!==process.env.SOURCE_RELEASE_SHA)process.exit(1)"
+      - name: Run both approved source adapters
+        if: steps.approval.outputs.approved == 'true'
+        env:
+          SOURCE_AUTOMATION_APPROVED: ${{ vars.SOURCE_AUTOMATION_APPROVED }}
+          SOURCE_RELEASE_SHA: ${{ vars.SOURCE_RELEASE_SHA }}
+          SOURCE_INGEST_API_URL: ${{ vars.SOURCE_INGEST_API_URL }}
+          SOURCE_INGEST_HMAC_KEY: ${{ secrets.SOURCE_INGEST_HMAC_KEY }}
+          INGEST_PYTHON: python
+          INGEST_INSTALL_DEPENDENCIES: 'true'
+          R2_SOURCE_RECEIPTS_ENABLED: ${{ vars.R2_SOURCE_RECEIPTS_ENABLED }}
+          R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: node infra/source-ingest-runner.cjs --all

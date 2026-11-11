@@ -14,7 +14,7 @@ from collections import Counter
 from datetime import date
 from pathlib import Path
 from html.parser import HTMLParser
-from urllib.parse import urljoin,urlsplit
+from urllib.parse import parse_qs, urljoin,urlsplit
 import fitz
 
 MAX_BYTES = 64 * 1024 * 1024
@@ -67,7 +67,16 @@ def discover_index(html,base_url):
     parser=Links();parser.feed(html);result=[];seen=set()
     for link in parser.items:
         if not link['href']:continue
-        url=urljoin(base_url,link['href']);parts=urlsplit(url)
+        url=urljoin(base_url,link['href']);parts=urlsplit(url);legacy=None
+        # Official archive uses an HTTP main.aspx wrapper. Never fetch it: unwrap
+        # only its observed same-host dated target and validate its HTTPS candidate.
+        if parts.hostname==base.hostname and parts.path.lower()=='/main.aspx' and not parts.username and not parts.password and parts.port in (None,80,443):
+            values=parse_qs(parts.query);main=values.get('main',[])
+            if len(main)==1:
+                target=urlsplit(main[0])
+                if target.scheme in ('http','https') and target.hostname==base.hostname and not target.username and not target.password and target.port in (None,80,443) and not target.query and not target.fragment and re.fullmatch(r'/(?:eskiler|ilanlar/eskiilanlar)/20\d{2}/\d{2}/20\d{6}(?:[-_]\d+)*\.(?:pdf|html?)',target.path,re.I):
+                    legacy=url;url='https://'+base.hostname+target.path;parts=urlsplit(url)
+
         if parts.scheme!='https' or parts.hostname!=base.hostname or parts.username or parts.password or parts.port not in (None,443):continue
         if url in seen:continue
         kind='pdf' if parts.path.lower().endswith('.pdf') else 'html' if parts.path.lower().endswith(('.htm','.html')) else 'navigation'
@@ -78,7 +87,7 @@ def discover_index(html,base_url):
         if stamp:
             try:observed_date=date(int(stamp[1][:4]),int(stamp[1][4:6]),int(stamp[1][6:])).isoformat()
             except ValueError:pass
-        result.append({'url':url,'label':label,'format':kind,'observedDate':observed_date,'supplemental':True if 'mukerrer' in fold(label) else None,'verifiedDownload':False,'automationEnabled':False})
+        result.append({'url':url,'label':label,'format':kind,'observedDate':observed_date,'supplemental':True if 'mukerrer' in fold(label) else None,'verifiedDownload':False,'automationEnabled':False,**({'observedLegacyReference':legacy,'linkResolution':'OBSERVED_MAIN_TARGET_HTTPS_CANDIDATE'} if legacy else {})})
         seen.add(url)
     return result
 
@@ -219,7 +228,7 @@ def dates_from_pages(pages):
                 d,m,y = map(int,day.split('.')); date(y,m,d)
                 hh,mm=map(int,re.split('[:.]',hour))
                 if hh>23 or mm>59: raise ValueError('Invalid source hour')
-                return f'{y:04d}-{m:02d}-{d:02d}T{hh:02d}:{mm:02d}:00+03:00'
+                return f'{y:04d}-{m:02d}-{d:02d}T{hh:02d}:{mm:02d}:00'
             try:
                 start,end=stamp(dates[1],hours[1]),stamp(dates[2],hours[2])
                 if start>end:raise ValueError('Reversed dates')
@@ -235,8 +244,22 @@ def dates_from_pages(pages):
                 result['applicationUrl']=match[0]
                 result['dateEvidence'].append(evidence(p['page'],text[max(0,match.start()-100):match.end()+100]))
     if len(verified_dates)==1 and not result['dateIssues']:
-        result['applicationStartAt'],result['applicationEndAt']=next(iter(verified_dates))
+        from application_dates import date_pair
+        start,end=next(iter(verified_dates));result['applicationDates']=date_pair(start,end)
     elif len(verified_dates)>1:result['dateIssues'].append('CONFLICTING_APPLICATION_DATES')
+    if 'applicationDates' not in result and not result['dateIssues']:
+        from application_dates import date_pair
+        values={'start':set(),'end':set()}
+        for page in pages:
+            plain=fold(compact(page['text']))
+            for key,label in [('start',r'basvuru baslangic tarihi'),('end',r'(?:son basvuru tarihi|basvuru bitis tarihi)')]:
+                for match in re.finditer(label+r'\s*[:：]?\s*(\d{2})[./](\d{2})[./](20\d{2})',plain):
+                    value=f'{match[3]}-{match[2]}-{match[1]}'
+                    try:date.fromisoformat(value)
+                    except ValueError:result['dateIssues'].append('INVALID_APPLICATION_DATES');continue
+                    values[key].add(value);result['dateEvidence'].append(evidence(page['page'],match[0]))
+        if len(values['start'])==len(values['end'])==1:result['applicationDates']=date_pair(next(iter(values['start'])),next(iter(values['end'])))
+        elif len(values['start'])>1 or len(values['end'])>1:result['dateIssues'].append('CONFLICTING_APPLICATION_DATES')
     return result
 
 def decode_official_html(data):
@@ -251,7 +274,7 @@ def decode_official_html(data):
 def parse_notice_html(path, source_url):
     """Local HTML only. Script/style contents and external resources are ignored."""
     discover_index('',source_url)  # exact-host HTTPS validation, without fetching
-    data=Path(path).read_bytes()
+    data=bytes(path) if isinstance(path,(bytes,bytearray)) else Path(path).read_bytes()
     if len(data)>2_000_000:raise ValueError('HTML_SIZE_LIMIT')
     html,encoding=decode_official_html(data)
     class Notice(HTMLParser):
@@ -297,18 +320,29 @@ def parse_notice_html(path, source_url):
             if number<len(parser.tables):positions.extend(positions_from_table(parser.tables[number],1,number,body))
         timing=dates_from_pages([{'page':1,'text':body}]);issues=timing.pop('dateIssues')+['HTML_SOURCE_REVIEW_REQUIRED','POSITION_COVERAGE_REQUIRES_REVIEW']
         if not positions:issues.append('POSITIONS_NOT_PARSED')
-        if not timing['applicationEndAt'] or not timing['applicationStartAt']:issues.append('APPLICATION_DATES_REQUIRE_REVIEW')
-        source={'kind':'OFFICIAL_GAZETTE','format':'HTML','encoding':encoding,'pageLocator':'LOGICAL_SECTION_NOT_PDF_PAGE','sectionStartLine':group['lineStart'],'pageStart':1,'pageEnd':1,'pdfSha256':None,'documentSha256':digest,'gazetteDate':stamp[0] if stamp else None,'gazetteNumber':stamp[1] if stamp else None,'sourceUrl':source_url,'dateEvidence':timing.pop('dateEvidence'),'dateSuggestions':timing.pop('dateSuggestions')}
+        if not timing.get('applicationDates',{}).get('calendarVerified') and (not timing['applicationEndAt'] or not timing['applicationStartAt']):issues.append('APPLICATION_DATES_REQUIRE_REVIEW')
+        source={'kind':'OFFICIAL_GAZETTE','format':'HTML','encoding':encoding,'pageLocator':'LOGICAL_SECTION_NOT_PDF_PAGE','sectionStartLine':group['lineStart'],'pageStart':1,'pageEnd':1,'pdfSha256':None,'documentSha256':digest,'gazetteDate':stamp[0] if stamp else None,'gazetteNumber':stamp[1] if stamp else None,'sourceUrl':source_url,'dateEvidence':timing.pop('dateEvidence'),'dateSuggestions':timing.pop('dateSuggestions'),'applicationDates':timing.get('applicationDates'),'relatedCareerDetailUrls':sorted(set(re.findall(r'https://kariyerkapisi\.gov\.tr/IlanDetay\?i=[a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}',text)))[:10]}
         candidates.append({'identity':f'urn:kadroradar:gazette-html:{digest}:{group["lineStart"]}','organization':group['organization'],'title':group['organization']+' - Personel alım duyurusu','sourceUrl':source_url,'sourceEvidence':source,'positions':positions,'quota':sum(p['quota'] for p in positions) if positions else None,'requirements':body[:18000],'issues':issues,'reviewRequired':True,'eventType':event_type(body),**timing})
     return {'parserVersion':'gazette-html-1','format':'HTML','sha256':digest,'pageCount':1,'inspectedPages':1,'gazetteDate':stamp[0] if stamp else None,'gazetteNumber':stamp[1] if stamp else None,'documentIssues':[] if groups else ['ORGANIZATION_NOT_IDENTIFIED'],'pageReports':[{'page':1,'issues':['HTML_SOURCE_REVIEW_REQUIRED'],'textCharacters':len(text),'ocr':None}],'candidates':candidates,'metrics':{'candidateCount':len(candidates),'positionRows':sum(len(c['positions']) for c in candidates),'flaggedPages':1,'ocrAttempted':0,'ocrSucceeded':0}}
 
 def parse_pdf(path, source_url=None, include_tables=True, ocr_pages=None):
-    path = Path(path)
-    if not path.is_file() or path.stat().st_size > MAX_BYTES: raise ValueError('PDF_SIZE_LIMIT')
-    data = path.read_bytes()
-    if not data.startswith(b'%PDF-'): raise ValueError('INVALID_PDF_SIGNATURE')
-    digest = hashlib.sha256(data).hexdigest()
-    try: document=fitz.open(stream=data,filetype='pdf')
+    in_memory=isinstance(path,(bytes,bytearray))
+    if in_memory:
+        data=bytes(path)
+        if len(data)>MAX_BYTES:raise ValueError('PDF_SIZE_LIMIT')
+        if not data.startswith(b'%PDF-'):raise ValueError('INVALID_PDF_SIGNATURE')
+        digest=hashlib.sha256(data).hexdigest()
+    else:
+        path=Path(path)
+        if not path.is_file() or path.stat().st_size>MAX_BYTES:raise ValueError('PDF_SIZE_LIMIT')
+        hasher=hashlib.sha256()
+        with path.open('rb') as file:
+            first=file.read(65536)
+            if not first.startswith(b'%PDF-'):raise ValueError('INVALID_PDF_SIGNATURE')
+            hasher.update(first)
+            for chunk in iter(lambda:file.read(65536),b''):hasher.update(chunk)
+        digest=hasher.hexdigest()
+    try: document=fitz.open(stream=data,filetype='pdf') if in_memory else fitz.open(path)
     except Exception as error: raise ValueError('BROKEN_PDF') from error
     with document:
         if document.needs_pass: raise ValueError('ENCRYPTED_PDF')
@@ -396,9 +430,10 @@ def parse_pdf(path, source_url=None, include_tables=True, ocr_pages=None):
             timing=dates_from_pages(group['pages'])
             issues=list(doc_issues)+sorted(set(issue for p in group['pages'] for issue in p['issues']))+timing.pop('dateIssues')
             if not positions:issues.append('POSITIONS_NOT_PARSED')
+            if re.search(r'\ufffd|[\u00c3\u00c4\u00c5][\u0080-\u00bf\u0152\u0153\u0178\u017d\u017e\u2018-\u2026]',text):issues.append('TEXT_ENCODING_REVIEW')
             if len(text)>18000:issues.append('BODY_TEXT_TRUNCATED_REVIEW_PDF')
-            if not timing['applicationStartAt'] or not timing['applicationEndAt']:issues.append('APPLICATION_DATES_REQUIRE_REVIEW')
-            source={'kind':'OFFICIAL_GAZETTE','gazetteDate':gazette_date,'gazetteNumber':gazette_number,'pdfSha256':digest,'pageStart':start,'pageEnd':end,'advertisementId':advertisement[-1] if advertisement else None,'sourceUrl':source_url,'dateEvidence':timing.pop('dateEvidence'),'dateSuggestions':timing.pop('dateSuggestions')}
+            if not timing.get('applicationDates',{}).get('calendarVerified') and (not timing['applicationStartAt'] or not timing['applicationEndAt']):issues.append('APPLICATION_DATES_REQUIRE_REVIEW')
+            source={'kind':'OFFICIAL_GAZETTE','gazetteDate':gazette_date,'gazetteNumber':gazette_number,'pdfSha256':digest,'pageStart':start,'pageEnd':end,'advertisementId':advertisement[-1] if advertisement else None,'sourceUrl':source_url,'dateEvidence':timing.pop('dateEvidence'),'dateSuggestions':timing.pop('dateSuggestions'),'applicationDates':timing.get('applicationDates'),'relatedCareerDetailUrls':sorted(set(re.findall(r'https://kariyerkapisi\.gov\.tr/IlanDetay\?i=[a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}',text)))[:10]}
             candidates.append({'identity':f'urn:kadroradar:gazette:{digest}:{start}:{identity}','organization':group['organization'],'title':group['organization']+' - Personel alım duyurusu','sourceUrl':source_url,'sourceEvidence':source,'positions':positions,'quota':sum(p['quota'] for p in positions) if positions else None,'requirements':text[:18000],'issues':issues+['POSITION_COVERAGE_REQUIRES_REVIEW'],'reviewRequired':True,'eventType':event_type(text),'confidence':{'grade':'REVIEW_REQUIRED','heuristicScore':max(0.1,0.8-0.15*len(issues)),'isProbability':False},**timing})
         return {'parserVersion':'gazette-1','sha256':digest,'pageCount':len(document),'inspectedPages':len(pages),'gazetteDate':gazette_date,'gazetteNumber':gazette_number,'documentIssues':doc_issues,'pageReports':[{'page':p['page'],'printedPage':p['printedPage'],'issues':p['issues'],'textCharacters':len(p['text']),'ocr':p['ocr']} for p in pages],'candidates':candidates,'metrics':{'candidateCount':len(candidates),'positionRows':sum(len(c['positions']) for c in candidates),'flaggedPages':sum(bool(p['issues']) for p in pages),'ocrAttempted':sum(p['ocr'] is not None for p in pages),'ocrSucceeded':sum(bool(p['ocr'] and 'text' in p['ocr']) for p in pages)}}
 

@@ -6,12 +6,14 @@ process.env.NODE_ENV='production';process.env.NOTIFICATIONS_ENABLED='false';proc
 const {NestFactory}=require('@nestjs/core'),{PrismaClient}=require('@prisma/client'),{AppModule}=require('./dist/module'),{passwordHash}=require('./dist/password'),{notificationPlan}=require('./dist/notification-plan');
 (async()=>{
  const db=new PrismaClient(),suffix=randomBytes(6).toString('hex'),root=path.resolve(__dirname,'../..');process.env.GAZETTE_STORAGE_DIR=path.join(root,'.local/daily-test',suffix);await fs.mkdir(process.env.GAZETTE_STORAGE_DIR,{recursive:true});
- const app=await NestFactory.create(AppModule,{logger:false});app.setGlobalPrefix('api/v1');await app.listen(0,'127.0.0.1');const base=await app.getUrl()+'/api/v1';let token;
- async function request(route,body,status=200,method=body?'POST':'GET'){const r=await fetch(base+route,{method,headers:{'content-type':'application/json','x-client-platform':'mobile',...(token?{authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined});const value=await r.json();assert.equal(r.status,status,JSON.stringify(value));return value;}
+ const app=await NestFactory.create(AppModule,{logger:false});app.setGlobalPrefix('api/v1');await app.listen(0,'127.0.0.1');const base=await app.getUrl()+'/api/v1';let token,candidateToken;
+ async function request(route,body,status=200,method=body?'POST':'GET',auth=token){const r=await fetch(base+route,{method,headers:{'content-type':'application/json','x-client-platform':'mobile',...(auth?{authorization:'Bearer '+auth}:{})},body:body?JSON.stringify(body):undefined});const value=await r.json();assert.equal(r.status,status,JSON.stringify(value));return value;}
+ const candidateRequest=(route,body,status=200,method=body?'POST':'GET')=>request(route,body,status,method,candidateToken);
  async function form(route,bytes,fields,type,status=201){const data=new FormData();data.append('file',new Blob([bytes],{type}),type==='text/html'?'index.html':'gazette.pdf');for(const [k,v] of Object.entries(fields))data.append(k,v);const r=await fetch(base+route,{method:'POST',headers:token?{authorization:'Bearer '+token}:{},body:data});const value=await r.json();assert.equal(r.status,status,JSON.stringify(value));return value;}
  try{
   await request('/admin/gazette-documents/indexes',undefined,401);
   const email=`daily-${suffix}@example.test`,password=randomBytes(24).toString('hex');const user=await db.user.create({data:{email,passwordHash:await passwordHash(password),role:'CONTENT_EDITOR'}});token=(await request('/account/login',{email,password},201)).token;
+  const candidate=await db.user.create({data:{email:'candidate-'+email,passwordHash:user.passwordHash,role:'USER'}});await require('./test-account-fixtures.cjs').verifiedCandidate(db,candidate);candidateToken=(await request('/account/login',{email:candidate.email,password},201)).token;
   const pdf=path.join(process.env.GAZETTE_STORAGE_DIR,'fixture.pdf');execFileSync('python',[path.join(root,'services/ingest/fixtures/make_gazette_fixture.py'),pdf]);const bytes=await fs.readFile(pdf);
   const sourceUrl='https://www.resmigazete.gov.tr/eskiler/2026/10/20261001.pdf',indexUrl='https://www.resmigazete.gov.tr/';
   const html='<h2>1 Ekim 2026 Tarihli ve 99999 Sayılı Resmî Gazete</h2><a href="'+sourceUrl+'">PDF Görüntüle</a><a href="/ilanlar/fixture.htm">Çeşitli İlânlar</a>';
@@ -70,7 +72,7 @@ const {NestFactory}=require('@nestjs/core'),{PrismaClient}=require('@prisma/clie
   await request('/announcements?kpssScore=NaN',undefined,400);await request('/announcements?deadlineBefore=2026-02-31',undefined,400);await request('/announcements?educationLevel=UNKNOWN',undefined,400);
   await db.announcement.update({where:{id:announcement.id},data:{applicationEndAt:null}});assert.equal((await filtered('educationLevel=LISANS')).total,0);
   const oldEnd=new Date(Date.now()-86400000);await db.announcement.update({where:{id:announcement.id},data:{applicationEndAt:oldEnd}});assert.equal((await request('/announcements?view=archive&organization='+encodeURIComponent(org))).total,1);
-  await request('/account/saved/'+announcement.id,{},200,'PUT');
+  await candidateRequest('/account/saved/'+announcement.id,{},200,'PUT');
   const doc=await db.sourceDocument.findUnique({where:{id:imported.documentId}});
   async function event(kind){return db.announcementImportRow.create({data:{sourceUrl:`urn:synthetic:event:${suffix}:${kind}`,contentHash:randomBytes(32).toString('hex'),sourceDocumentId:doc.id,raw:{eventType:kind,sourceEvidence:{pdfSha256:doc.sha256,pageStart:1,pageEnd:1}},parsed:{title:'Synthetic event',organization:org},issues:['SYNTHETIC_EVENT_REQUIRES_REVIEW']}});}
   const correction=await event('CORRECTION'),newEnd=new Date(Date.now()+7*86400000).toISOString();const payload={version:correction.version,announcementId:announcement.id,action:'EXTEND',applicationEndAt:newEnd,documentVerified:true,evidence:'Synthetic isolated source checked; no actual recruitment event.'};
@@ -82,12 +84,12 @@ const {NestFactory}=require('@nestjs/core'),{PrismaClient}=require('@prisma/clie
   const htmlPublication=await request('/admin/announcement-imports/'+htmlRow.id+'/review',{version:htmlRow.version,action:'PUBLISH'},201);
   const htmlDetail=await request('/announcements/'+htmlPublication.announcementId);assert.equal(htmlDetail.sourceEvidence.format,'HTML');assert.equal(htmlDetail.positions.length,1);assert.equal(htmlDetail.sourceEvidence.documentSha256,notice.sha256);
   assert.ok(!(await request('/announcements')).items.some(item=>item.id===htmlDetail.id));
-  let saved=await request('/account/saved');assert.equal(saved.find(s=>s.announcementId===announcement.id).announcement.applicationEndAt,newEnd);
+  let saved=await candidateRequest('/account/saved');assert.equal(saved.find(s=>s.announcementId===announcement.id).announcement.applicationEndAt,newEnd);
   assert.equal(notificationPlan({notificationConsent:true},[],saved).find(e=>e.announcementId===announcement.id).kind,'EXTENDED');
-  await db.announcement.update({where:{id:announcement.id},data:{sourceCheckedAt:null}});saved=await request('/account/saved');assert.equal(notificationPlan({notificationConsent:true},[],saved).filter(e=>e.announcementId===announcement.id).length,0);
+  await db.announcement.update({where:{id:announcement.id},data:{sourceCheckedAt:null}});saved=await candidateRequest('/account/saved');assert.equal(notificationPlan({notificationConsent:true},[],saved).filter(e=>e.announcementId===announcement.id).length,0);
   await db.announcement.update({where:{id:announcement.id},data:{sourceCheckedAt:new Date()}});
   const cancellation=await event('CANCELLATION');await request('/admin/announcement-imports/'+cancellation.id+'/apply-event',{...payload,version:cancellation.version,action:'WITHDRAW'},201);await request('/announcements/'+announcement.id,undefined,404);
-  saved=await request('/account/saved');assert.equal(saved.find(s=>s.announcementId===announcement.id).announcement.status,'WITHDRAWN');assert.equal(notificationPlan({notificationConsent:true},[],saved).find(e=>e.announcementId===announcement.id).kind,'WITHDRAWN');
+  saved=await candidateRequest('/account/saved');assert.equal(saved.find(s=>s.announcementId===announcement.id).announcement.status,'WITHDRAWN');assert.equal(notificationPlan({notificationConsent:true},[],saved).find(e=>e.announcementId===announcement.id).kind,'WITHDRAWN');
   console.log(JSON.stringify({status:'PASS',mode:'SYNTHETIC_OFFLINE',indexDeduplicated:true,sourceAndDateMismatchRejected:true,educationLevels:3,samePositionFiltering:true,extensionAndCancellation:true,unverifiedNotificationSuppressed:true,productionWrites:0,androidDeviceChecks:0}));
  }finally{await app.close();await db.$disconnect();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

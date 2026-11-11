@@ -16,6 +16,8 @@ jobs:
         shell: powershell
       - run: ${{ matrix.shell }} -NoProfile -File .\infra\test-release-http-smoke.ps1
         shell: powershell
+      - run: ${{ matrix.shell }} -NoProfile -File .\infra\test-r2-connection-pilot-wrapper.ps1
+        shell: powershell
   render-runtime:
     runs-on: ubuntu-latest
     steps:
@@ -27,6 +29,11 @@ jobs:
       - run: node infra/test-locked-prisma.cjs
       - run: docker build -f Dockerfile.api -t kadroradar-api:rc1 .
       - run: node infra/test-render-readiness.cjs
+      - run: node infra/test-rss-runtime.cjs
+      - run: node infra/test-ephemeral-runtime.cjs
+      - run: node infra/test-source-storage.cjs
+      - run: node infra/test-source-ingest-runner.cjs
+      - run: node infra/test-r2-connection-pilot.cjs
       - run: node infra/test-rss-runtime.cjs
   release-secrets:
     runs-on: ubuntu-latest
@@ -54,6 +61,10 @@ jobs:
       - run: python -m unittest discover -s services/ingest -p test_source_probe.py -v
       - run: python -m unittest discover -s services/ingest -p test_feed_metadata.py -v
       - run: python -m unittest discover -s services/ingest -p test_career_rss.py -v
+      - run: python -m unittest discover -s services/ingest -p test_career_worker.py -v
+      - run: python -m unittest discover -s services/ingest -p test_career_detail.py -v
+      - run: python -m unittest discover -s services/ingest -p test_application_dates.py -v
+      - run: python -m unittest discover -s services/ingest -p test_gazette_ephemeral.py -v
       - run: python -m unittest discover -s services/ingest -p test_manual_import.py -v
       - run: python -m unittest discover -s services/ingest -p test_official_gazette.py -v
       - run: python -m unittest discover -s services/ingest -p test_osym_web.py -v
@@ -126,3 +137,10 @@ jobs:
           EXPO_PUBLIC_API_URL: https://kadroradar.onrender.com/api/v1
           EXPO_PUBLIC_PRIVACY_URL: https://kadroradar.onrender.com/privacy
           EXPO_PUBLIC_ACCOUNT_DELETION_URL: https://kadroradar.onrender.com/delete-account
+
+      - run: node apps/api/test-career-publication.cjs
+      - run: node apps/api/test-live-announcements.cjs
+      - run: node apps/api/test-automation-activation.cjs
+      - run: node apps/api/test-source-ingest.cjs
+      - run: node apps/api/test-career-source-ingest.cjs
+      - run: node apps/api/test-automation-auth-compat.cjs

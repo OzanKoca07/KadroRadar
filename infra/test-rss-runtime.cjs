@@ -5,7 +5,7 @@ const program=[
  'import sys,json',
  "from pathlib import Path",
  "sys.path.insert(0,'/app/services/ingest')",
- 'import fitz,career_rss,rss_transport,source_adapters,source_rights,gazette_download,official_gazette',
+ 'import fitz,gazette_ephemeral,career_worker,career_detail,career_rss,rss_transport,source_adapters,source_rights,gazette_download,official_gazette',
  "assert career_rss.REGISTRY['career']['enabled'] is False",
  "assert career_rss.REGISTRY['career']['rightsAssessment']['status']=='REVIEW_REQUIRED'",
  "assert not Path('/app/.local/kariyer/kariyer-kapisi-gercek.xml').exists()",
