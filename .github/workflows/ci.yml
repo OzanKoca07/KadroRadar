@@ -59,7 +59,7 @@ jobs:
       - run: python -m unittest discover -s services/ingest -p test_osym_web.py -v
       - run: python -m unittest discover -s services/ingest -p test_osym_archive.py -v
   typescript:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16-alpine
@@ -105,7 +105,33 @@ jobs:
       - run: node infra/test-migration16-deploy.cjs
       - run: node infra/test-mobile-session.cjs
       - run: node infra/test-secure-store-config.cjs
-      - run: pnpm --filter @kadro/admin exec playwright install --with-deps chromium
+      # The official Ubuntu 24.04 runner already supplies Chromium's native libs.
+      # Install the browser build matched to the frozen Playwright lockfile, then
+      # fail closed on missing libraries instead of mutating APT repositories.
+      - name: Install lockfile-matched Chromium without APT
+        run: pnpm --filter @kadro/admin exec playwright install chromium
+      - name: Verify real bundled Chromium and native dependencies
+        working-directory: apps/admin
+        run: |
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const { chromium } = require('@playwright/test');
+          (async () => {
+            let browser;
+            try {
+              browser = await chromium.launch({ headless: true });
+              const page = await browser.newPage();
+              await page.setContent('<title>KadroRadar CI</title>');
+              assert.equal(await page.title(), 'KadroRadar CI');
+              console.log(JSON.stringify({ status: 'PASS', test: 'real-chromium-native-runtime', playwright: require('@playwright/test/package.json').version, browser: browser.version() }));
+            } finally {
+              if (browser) await browser.close();
+            }
+          })().catch(error => {
+            console.error(JSON.stringify({ status: 'FAIL', test: 'real-chromium-native-runtime', kind: error.name, code: /missing dependencies|shared libraries|Host system/i.test(String(error.message)) ? 'NATIVE_DEPENDENCIES_MISSING' : /Executable doesn.t exist/i.test(String(error.message)) ? 'CHROMIUM_BINARY_MISSING' : 'BROWSER_SMOKE_FAILED' }));
+            process.exitCode = 1;
+          });
+          NODE
       - run: node apps/api/test-recovery-browser.cjs
       - run: node apps/api/test-admin-browser.cjs
       - run: node apps/api/test-legal-browser.cjs
