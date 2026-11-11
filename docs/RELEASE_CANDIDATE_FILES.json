@@ -80,7 +80,8 @@
   "documentationAndInactiveTemplates": [
     "docs/AUTOMATION_RELEASE_FILES.json",
     "docs/RELEASE_CANDIDATE_FILES.json",
-    "docs/KADRORADAR_RELEASE_READINESS.md"
+    "docs/KADRORADAR_RELEASE_READINESS.md",
+    "docs/KADRORADAR_CI_FAILURE_FIX.md"
   ],
   "separateOperatorReviewPreserveUnchanged": [
     "docs/ADMIN_STATUS_DIAGNOSIS.md",

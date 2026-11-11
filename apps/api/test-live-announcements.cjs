@@ -7,11 +7,11 @@ const registry=require('../../packages/official-sources.json'),hash=s=>createHas
 try{
  states=await db.sourceSyncState.findMany({where:{id:{in:['policy:career','policy:gazette']}}});await db.sourceSyncState.deleteMany({where:{id:{in:['policy:career','policy:gazette']}}});
  Object.assign(registry.career,licensed(registry.career));Object.assign(registry.gazette,licensed(registry.gazette));registry.gazette.rightsAssessment.evidence.scopes.push('AUTOMATED_GAZETTE_DOCUMENT_ACCESS');
- const directory=path.resolve('../../.local/live-announcements/synthetic-'+randomUUID());fs.mkdirSync(directory,{recursive:true});
+ const ingestDirectory=path.resolve(__dirname,'../../services/ingest'),directory=path.resolve(__dirname,'../../.local/live-announcements/synthetic-'+randomUUID());fs.mkdirSync(directory,{recursive:true});
  const python=`import sys,json,hashlib
 from pathlib import Path
 from datetime import datetime,timedelta
-sys.path.insert(0,'../../services/ingest')
+sys.path.insert(0,sys.argv[2])
 from fixtures.make_gazette_fixture import make
 from official_gazette import parse_pdf
 import fitz
@@ -20,7 +20,7 @@ d=fitz.open(p);pg=d[1];font='C:/Windows/Fonts/arial.ttf' if Path('C:/Windows/Fon
 a=(datetime.now()-timedelta(days=1)).strftime('%d.%m.%Y');b=(datetime.now()+timedelta(days=7)).strftime('%d.%m.%Y')
 pg.insert_text((30,120),'Başvuru tarihleri: '+a+' - '+b+' sona erecektir.\\nBaşlangıç tarihinde saat 09:00, bitiş tarihinde saat 17:00',fontname='fixture2',fontsize=9)
 x=p.with_name('complete.pdf');d.save(x);d.close();print(json.dumps(parse_pdf(x,source_url='https://www.resmigazete.gov.tr/eskiler/2026/10/20261001.pdf'),ensure_ascii=True))`;
- phase='PDF_PARSE';const parsed=JSON.parse(cp.execFileSync('python',['-c',python,path.join(directory,'base.pdf')],{encoding:'utf8',windowsHide:true,timeout:60000}));
+ phase='PDF_PARSE';const parsed=JSON.parse(cp.execFileSync(process.env.INGEST_PYTHON||'python',['-c',python,path.join(directory,'base.pdf'),ingestDirectory],{encoding:'utf8',stdio:'pipe',windowsHide:true,timeout:60000}));
  phase='NATIVE_DATE_PROOF';const candidate=parsed.candidates[0];assert.equal(candidate.applicationEndAt,null);assert.equal(candidate.applicationDates.mode,'CALENDAR');assert.equal(gazettePublicationDecision(candidate,registry.gazette,null).decision,'AUTO_PUBLISH_ELIGIBLE');checks+=2;
  const report={sourceId:'gazette',date:parsed.gazetteDate,indexes:[],documents:[{url:candidate.sourceUrl,sha256:parsed.sha256,format:'pdf',parsed}],complete:true,networkProvenance:'MOCK_TRANSPORT'};
  for(const change of [{issues:['OCR_REVIEW_REQUIRED']},{applicationDates:{...candidate.applicationDates,end:{precision:'UNKNOWN',raw:null}}},{applicationEndAt:'2026-02-30T17:00:00+03:00'},{eventType:'CANCELLATION'}])assert.equal(gazettePublicationDecision({...candidate,...change},registry.gazette,null).decision,'MANUAL_REVIEW');checks+=4;
@@ -36,4 +36,4 @@ x=p.with_name('complete.pdf');d.save(x);d.close();print(json.dumps(parse_pdf(x,s
  phase='CONFLICT';const conflicting={...row,contentHash:hash('SYNTHETIC CONFLICT '+guid),applicationDates:{...row.applicationDates,end:{...row.applicationDates.end,raw:new Date(Date.parse(row.applicationDates.end.date+'T00:00:00Z')+86400000).toISOString().slice(0,10)+row.applicationDates.end.raw.slice(10)}}};await stageCareerSnapshot(db,{...feed,rows:[conflicting]},'SYNTHETIC',{automatic:true});assert.equal(await db.announcement.count(),count);assert.equal((await db.announcement.findUniqueOrThrow({where:{id:item.id}})).sourceCheckedAt,null);assert.equal((await fetch(base+'/announcements/'+item.id)).status,404);checks+=3;
  phase='REVOKE';await new SourceRightsStore(db).review(registry.gazette,{status:'REVIEW_REQUIRED',reason:'SYNTHETIC source scope revocation test',expectedRevision:null},'SYNTHETIC');assert.ok(!(await get('/announcements?view=all')).items.some(r=>r.id===item.id));checks++;
  console.log(JSON.stringify({status:'PASS',test:'live-announcements',checks,provenance:'SYNTHETIC_PDF_PARSED_AND_ISOLATED_HTTP',productionWrites:0,liveDownload:false}));
-}catch(e){console.error(JSON.stringify({status:'FAIL',test:'live-announcements',phase,kind:e.name,...(typeof e.actual==='number'?{actual:e.actual,expected:e.expected}:{})}));process.exitCode=1;}finally{await app?.close();await db.sourceSyncState.deleteMany({where:{id:{in:['policy:career','policy:gazette']}}});for(const state of states)await db.sourceSyncState.create({data:{...state,metrics:state.metrics??require('@prisma/client').Prisma.DbNull}});Object.assign(registry.career,saved.career);Object.assign(registry.gazette,saved.gazette);await db.$disconnect();}})();
+}catch(e){console.error(JSON.stringify({status:'FAIL',test:'live-announcements',phase,kind:e.name,...(phase==='PDF_PARSE'?{exitCode:Number.isInteger(e.status)?e.status:null,code:/No module named/.test(String(e.stderr||''))?'PYTHON_MODULE_MISSING':/Fixture font unavailable/.test(String(e.stderr||''))?'FIXTURE_FONT_MISSING':e.code==='ETIMEDOUT'?'PYTHON_TIMEOUT':'PDF_PARSE_FAILED'}:{}),...(typeof e.actual==='number'?{actual:e.actual,expected:e.expected}:{})}));process.exitCode=1;}finally{await app?.close();await db.sourceSyncState.deleteMany({where:{id:{in:['policy:career','policy:gazette']}}});for(const state of states)await db.sourceSyncState.create({data:{...state,metrics:state.metrics??require('@prisma/client').Prisma.DbNull}});Object.assign(registry.career,saved.career);Object.assign(registry.gazette,saved.gazette);await db.$disconnect();}})();

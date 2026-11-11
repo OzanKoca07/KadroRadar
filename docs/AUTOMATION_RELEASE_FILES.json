@@ -74,7 +74,8 @@
     "apps/mobile/lib/news.ts",
     "apps/mobile/ui/news-slider.tsx",
     "docs/KADRORADAR_RELEASE_READINESS.md",
-    "apps/api/test-admin-browser.cjs"
+    "apps/api/test-admin-browser.cjs",
+    "docs/KADRORADAR_CI_FAILURE_FIX.md"
   ],
   "derivedFromBase": [
     "apps/api/src/environment.ts",
@@ -220,7 +221,8 @@
     "docs/RELEASE_CANDIDATE_FILES.json",
     "infra/prepare-automation-release.cjs",
     "docs/AUTOMATION_RELEASE_FILES.json",
-    "apps/api/test-admin-browser.cjs"
+    "apps/api/test-admin-browser.cjs",
+    "docs/KADRORADAR_CI_FAILURE_FIX.md"
   ],
   "stagingProhibitedInCurrentDirtyCheckout": true,
   "excludedWorkingTreeChanges": [
@@ -301,5 +303,16 @@
       "apps/api/test-admin-browser.cjs"
     ],
     "previousSnapshotPaths": 76
+  },
+  "ciFailureFix": {
+    "baseCommit": "5a0d45f77fcc6a4d497e8b308fb4b3577a926f4a",
+    "scope": [
+      "apps/api/test-live-announcements.cjs",
+      "infra/test-ephemeral-runtime.cjs",
+      "docs/KADRORADAR_CI_FAILURE_FIX.md",
+      "docs/AUTOMATION_RELEASE_FILES.json",
+      "docs/RELEASE_CANDIDATE_FILES.json"
+    ],
+    "purpose": "CI cwd-independent fixture import and non-root container-owned temporary tests"
   }
 }
