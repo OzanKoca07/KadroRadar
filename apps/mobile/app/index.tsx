@@ -1,11 +1,12 @@
-import { Link } from 'expo-router';
-import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
-export default function Home() { return <SafeAreaView style={styles.root}><View style={styles.container}>
-  <Text style={styles.brand}>KadroRadar</Text><Text style={styles.kicker}>KAMU KARİYER REHBERİN</Text>
-  <Text style={styles.title}>Tercihlerine veriyle yön ver.</Text>
-  <Text style={styles.body}>Geçmiş ÖSYM yerleştirme puanlarını incele, kadroları karşılaştır ve sonraki adımlarını daha bilinçli planla.</Text>
-  <Link href="/historical" style={styles.button}>Geçmiş atamaları keşfet →</Link>
-  <View style={styles.box}><Text style={styles.boxTitle}>Yakında: Akıllı İlan Eşleştirme</Text><Text style={styles.boxBody}>Nitelik kodları ve resmî ilan kaynakları doğrulandığında profil bazlı kadro uygunluğu sunulacak.</Text></View>
-  <Text style={styles.disclaimer}>Bağımsız bilgi ve karar destek uygulamasıdır. ÖSYM veya kamu kurumlarının resmî uygulaması değildir.</Text>
-</View></SafeAreaView>; }
-const styles=StyleSheet.create({root:{flex:1,backgroundColor:'#F3F6FB'},container:{padding:24,flex:1,justifyContent:'center'},brand:{fontSize:22,fontWeight:'900',color:'#172758'},kicker:{fontSize:11,letterSpacing:2,color:'#4775BA',fontWeight:'800',marginTop:9},title:{fontSize:34,lineHeight:42,fontWeight:'900',color:'#132248',marginTop:26},body:{fontSize:15,lineHeight:24,color:'#60708C',marginTop:13},button:{backgroundColor:'#172758',color:'white',fontSize:15,fontWeight:'800',overflow:'hidden',borderRadius:12,padding:17,marginTop:28},box:{padding:18,backgroundColor:'white',borderRadius:15,marginTop:24},boxTitle:{fontSize:16,fontWeight:'800',color:'#172758'},boxBody:{marginTop:8,fontSize:12,lineHeight:19,color:'#62718B'},disclaimer:{fontSize:11,lineHeight:17,color:'#8B96A8',marginTop:24}});
+import {router} from 'expo-router';
+import {Pressable,ScrollView,Text,View} from 'react-native';
+import {Button,Card,Icon,IconButton,Independence,Screen,type IconName} from '../ui/components';
+import {NewsSlider} from '../ui/news-slider';
+import {colors,ui} from '../ui/theme';
+export default function Home(){
+ const shortcuts:{title:string;icon:IconName;route:'/announcements'|'/matches'|'/saved'}[]=[{title:'Güncel ilanlar',icon:'megaphone-outline',route:'/announcements'},{title:'Bana uygun',icon:'checkmark-circle-outline',route:'/matches'},{title:'Kaydedilenler',icon:'bookmark-outline',route:'/saved'}];
+ return <Screen safeTop><View style={ui.between}><Text style={ui.heading}>KadroRadar</Text><IconButton label="Bildirimler" name="notifications-outline" onPress={()=>router.push('/notifications')}/></View><NewsSlider/>
+ <Card><Text accessibilityRole="header" style={ui.heading}>Geçmiş atamalar</Text><Text style={ui.muted}>ÖSYM taban ve tavan puanları</Text><Button title="Geçmiş atamaları incele" icon="arrow-forward-outline" onPress={()=>router.push('/historical')}/><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8}}>{[['BACHELOR','Lisans'],['ASSOCIATE','Önlisans'],['HIGH_SCHOOL','Ortaöğretim']].map(([education,label])=><Pressable key={education} accessibilityRole="button" accessibilityLabel={label+', geçmiş atamalar'} onPress={()=>router.push({pathname:'/historical',params:{education}})} style={{minHeight:48,justifyContent:'center',paddingHorizontal:10}}><Text style={[ui.label,{color:colors.primary}]}>{label}</Text></Pressable>)}</ScrollView></Card>
+ <Card>{shortcuts.map(item=><Pressable key={item.route} accessibilityRole="button" accessibilityLabel={item.title} onPress={()=>router.push(item.route)} style={({pressed})=>[ui.between,{minHeight:56,padding:8,borderRadius:10,backgroundColor:pressed?colors.primarySoft:'transparent'}]}><View style={ui.row}><Icon name={item.icon}/><Text style={ui.label}>{item.title}</Text></View><Icon name="chevron-forward-outline" size={18}/></Pressable>)}</Card>
+ <Button title="Uygulama hakkında" variant="ghost" onPress={()=>router.push('/about')}/><Independence/></Screen>;
+}

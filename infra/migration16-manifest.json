@@ -1,0 +1,66 @@
+[
+  {
+    "name": "202610220001_init",
+    "sha256": "e893ea1c7b6c92334e3e0cc5d843af913f7fceae32f9583831d20d1e53ff289f"
+  },
+  {
+    "name": "202610220002_review_audit",
+    "sha256": "74c5fdfac0fb941212202bba7cf1d0618ff09d27fa1af67b11e6e9ff3644c123"
+  },
+  {
+    "name": "20261023165113_add_announcements",
+    "sha256": "5e0635aa398613db051e9f1957a2aea06208c7575d632c84cc2762fb426e896b"
+  },
+  {
+    "name": "20261023210000_announcement_staging",
+    "sha256": "1966b1011e78aea61800ed3f41daa86bde7899e095a4a14eb4380857f07a52f5"
+  },
+  {
+    "name": "202610250001_candidate_features",
+    "sha256": "0919eab0808e3a35a5eff5262d813017595197694a538aa40141adc96843e8df"
+  },
+  {
+    "name": "202610250002_notifications",
+    "sha256": "7ffbf7e0ccc90474e38f4460ee2bc38ab9b607a3532ca22583d03840daa720c0"
+  },
+  {
+    "name": "202610250003_auth_rate_limit",
+    "sha256": "6200e06af2739d2e2213dc1134430cd369f9656203ab8b97e28f08b45e2c8b7c"
+  },
+  {
+    "name": "202610250004_saved_deadline_tracking",
+    "sha256": "211b7a0dc4450886304237b5d90433dce365c2decd12fc99ee4ebfd1eabe5d47"
+  },
+  {
+    "name": "202610250005_notification_device_binding",
+    "sha256": "cd3701e2fa0e417e71ae768fd0a32a2d9d04ebda90ec080c712eeb4858f09b40"
+  },
+  {
+    "name": "202610250006_gazette_evidence",
+    "sha256": "9fc8f569130f0cde67575a4fe42695914f7d04ba06449f254f64dd5c71ff4a18"
+  },
+  {
+    "name": "202610250007_announcement_source_references",
+    "sha256": "3be4dc6aa2bdd9a25fc15d1bf67a11a82f21a17f35fc5e3e4d9a1cb6371d4f53"
+  },
+  {
+    "name": "202610250008_source_sync_state",
+    "sha256": "b147bc20fe312f67c3ede74b8cf4b4fe08af7f6c63d806ff57bf5490f317b13b"
+  },
+  {
+    "name": "202610260001_historical_evidence",
+    "sha256": "22f5b7c8d16b48c279428040a003f943d86f66777a78973c9b231c4b9505f9c0"
+  },
+  {
+    "name": "202610260002_historical_score_precision",
+    "sha256": "0c2f44c0ac7974e7e1cc58686cfe2049e69dfba002d131cab701f255d8903a3f"
+  },
+  {
+    "name": "202610270001_gazette_index",
+    "sha256": "31167c3e75a74711fe50aa08e105171445ad7cbf1828ad6c898674ae0a221f9a"
+  },
+  {
+    "name": "20261031000100_account_recovery",
+    "sha256": "e706db2cb2241c09919c0a3c96abdc862227956b84c932b71bc2b36318a53ead"
+  }
+]

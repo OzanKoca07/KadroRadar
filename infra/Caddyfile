@@ -1,0 +1,27 @@
+{$API_DOMAIN} {
+    request_body {
+        max_size 70MB
+    }
+    encode gzip
+    handle /privacy {
+        root * /srv/kadroradar
+        rewrite * /privacy.html
+        file_server
+    }
+    handle /delete-account {
+        root * /srv/kadroradar
+        rewrite * /delete-account.html
+        file_server
+    }
+    handle_path /legal/* {
+        root * /srv/kadroradar
+        file_server
+    }
+    handle {
+        reverse_proxy {$API_UPSTREAM:api:3000}
+    }
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+    }
+}

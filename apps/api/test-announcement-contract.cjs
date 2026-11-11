@@ -1,0 +1,11 @@
+const assert=require('node:assert/strict'),{applicationStatus}=require('./dist/announcement-status'),{sameOfficialNotice}=require('./dist/announcement-identity'),{positionFilters}=require('./dist/announcement-filters');
+const now=new Date('2026-10-26T12:00:00Z'),base={status:'PUBLISHED',sourceCheckedAt:now,publishedAt:now,applicationStartAt:'2026-10-25T12:00:00Z',applicationEndAt:'2026-10-27T12:00:00Z'};
+assert.equal(applicationStatus(base,now),'OPEN');assert.equal(applicationStatus({...base,applicationStartAt:'2026-10-27T00:00:00Z'},now),'UPCOMING');assert.equal(applicationStatus({...base,applicationEndAt:'2026-10-26T00:00:00Z'},now),'CLOSED');
+assert.equal(applicationStatus({...base,applicationStartAt:null},now),'DATE_UNVERIFIED');assert.equal(applicationStatus({...base,sourceCheckedAt:null},now),'REVIEW_REQUIRED');assert.equal(applicationStatus({...base,status:'ARCHIVED'},now),'ARCHIVED');
+assert.equal(applicationStatus({...base,applicationStartAt:'invalid'},now),'DATE_UNVERIFIED');
+const source={parsed:{organization:'Resmî Test Kurumu'},raw:{sourceEvidence:{pdfSha256:'a'.repeat(64),pageStart:1,pageEnd:2,advertisementId:'123/1-1',gazetteDate:'2026-10-26'}}};
+assert.ok(sameOfficialNotice(source,structuredClone(source)));const changed=structuredClone(source);changed.raw.sourceEvidence.advertisementId='124/1-1';assert.equal(sameOfficialNotice(source,changed),null);
+assert.equal(sameOfficialNotice(source,{parsed:{organization:'Farklı Kurum'},raw:source.raw}),null);assert.equal(sameOfficialNotice({parsed:source.parsed,raw:{}},source),null);
+assert.throws(()=>positionFilters({kpssRequired:'false',kpssScoreType:'P3'}));assert.throws(()=>positionFilters({employmentType:'GUESS'}));assert.throws(()=>positionFilters({kpssRequired:'unknown'}));
+assert.ok(positionFilters({kpssRequired:'false',employmentType:'WORKER'}).length);
+console.log('PASS: six application states, unknown dates, explicit KPSS-free/type filters, conservative duplicate hints; no automatic merge');

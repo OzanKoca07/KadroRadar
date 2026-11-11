@@ -1,0 +1,4 @@
+const assert=require('node:assert/strict'),crypto=require('node:crypto');const original=crypto.scrypt;let active=0,maximum=0;
+crypto.scrypt=(password,salt,length,options,callback)=>{active++;maximum=Math.max(maximum,active);setTimeout(()=>{active--;callback(null,Buffer.alloc(length));},10);};
+const {passwordHash}=require('./dist/password');
+(async()=>{try{const values=await Promise.allSettled(Array.from({length:12},()=>passwordHash('synthetic concurrency fixture')));assert.equal(maximum,2);assert.equal(values.filter(x=>x.status==='fulfilled').length,10);const rejected=values.filter(x=>x.status==='rejected');assert.equal(rejected.length,2);assert.ok(rejected.every(x=>x.reason.getStatus()===429));await passwordHash('queue slot recovery');console.log('PASS: authentication max2 concurrent derivations, max8 queued, excess429, queue recovery; crypto callback mocked');}finally{crypto.scrypt=original;}})().catch(error=>{console.error(error);process.exitCode=1;});

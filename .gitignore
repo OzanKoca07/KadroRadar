@@ -62,3 +62,21 @@ Thumbs.db
 # Temporary files
 tmp/
 temp/
+
+
+
+package-lock.json
+.local/
+services/ingest/artifacts/
+
+# TypeScript source output from old emitting builds; source TS/TSX is retained.
+apps/admin/src/*.js
+*.key
+*.pfx
+*.sql.gz
+*.sql.zip
+
+# Release archives and signing/provider files remain local.
+/kadroradar.zip
+credentials.json
+google-services*.json

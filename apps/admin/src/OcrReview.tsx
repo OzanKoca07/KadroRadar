@@ -1,0 +1,7 @@
+import React,{useState} from 'react';
+const API=import.meta.env.VITE_API_BASE_URL||'http://localhost:3000/api/v1';
+export function OcrReview({documentId,pages,csrf}:{documentId:string;pages:number[];csrf:string}){
+ const [busy,setBusy]=useState(false),[reports,setReports]=useState<any[]>([]),[message,setMessage]=useState('');
+ async function run(){setBusy(true);setReports([]);try{for(let offset=0;offset<pages.length;offset+=5){setMessage(`OCR: ${offset+1}–${Math.min(offset+5,pages.length)} / ${pages.length}`);const response=await fetch(API+'/admin/gazette-documents/'+documentId+'/ocr',{method:'POST',credentials:'include',headers:{'content-type':'application/json','x-csrf-token':csrf},body:JSON.stringify({pages:pages.slice(offset,offset+5)}),signal:AbortSignal.timeout(190000)});if(!response.ok)throw Error('OCR HTTP '+response.status);const value=await response.json();setReports(old=>[...old,...value.pageReports]);}setMessage('İnceleme kanıtları kaydedildi. Tarih, kadro ve kontenjan otomatik değiştirilmedi.');}catch(error){setMessage(String(error));}finally{setBusy(false);}}
+ return <div><button disabled={!csrf||busy||!pages.length} onClick={run}>İşaretli sayfalara kontrollü OCR uygula</button><p role="status">{message}</p>{reports.map(report=><details key={report.page}><summary>Sayfa {report.page} · {report.issues.join(', ')}</summary><pre style={{whiteSpace:'pre-wrap'}}>{report.ocr?.text||report.ocr?.error}</pre><p>Tablo, tarih ve sayılar insan tarafından kaynak görüntüsüyle karşılaştırılmalıdır.</p></details>)}</div>;
+}

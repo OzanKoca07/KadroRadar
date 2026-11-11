@@ -1,29 +1,45 @@
-# KadroRadar — geliştirme başlangıcı
+# KadroRadar
 
-Bu depo **tamamlanmış ürün değildir**. Gerçek 2024/1 ÖSYM PDF'si, deterministik ayrıştırıcı, ilk PostgreSQL şeması, NestJS okuma API'si, Expo ekranı ve admin kabuğu içerir.
+Bağımsız kamu ilanı ve ÖSYM geçmiş yerleştirme uygulaması. NestJS/Prisma/PostgreSQL API, React admin ve Expo SDK54 mobil uygulama içerir. Kamu kurumlarının resmî uygulaması değildir.
 
-## Ön koşullar
-Node.js 20+, pnpm 9, Python 3.11+, Docker Compose, Android emülatörü.
+## Release belgeleri
 
-```bash
-cp .env.example .env
-docker compose -f infra/docker-compose.yml up -d
-pnpm install
+- [Render ÖSYM aktarımı: kaynaklar, pilot ve güvenli operatör komutları](docs/RENDER_OSYM_DATA_IMPORT.md)
+- [Günlük Resmî Gazete ve yayın operasyonu](docs/DAILY_GAZETTE_OPERATIONS.md)
+- [ÖSYM dönem genişletmesi ve 18 belge test raporu](docs/OSYM_HISTORICAL_EXPANSION.md)
+
+- [Render kurulumu](docs/RENDER_DEPLOYMENT_SETUP.md)
+- [Release teslimi ve testler](docs/RENDER_RELEASE_HANDOFF.md)
+- [RC1 raporu](docs/RC1_RELEASE_REPORT.md)
+- [Yedekleme ve deployment](docs/RC1_DEPLOYMENT_RUNBOOK.md)
+- [Dış kurulum listesi](docs/RC1_EXTERNAL_SETUP_CHECKLIST.md)
+
+`feature/announcements-core` release dalıdır. Schema zaten ilan, staging, audit, profil, oturum, kaydedilenler ve bildirim modellerini içerir. Eski `docs/prisma-addition.prisma` dosyasını schema'ya yeniden eklemeyin.
+
+## Geliştirme
+
+Node22, pnpm9.15.4, PostgreSQL16 ve Python3.11+ gerekir. `.env.example` yalnızca şablondur; gerçek değerleri Git dışında sağlayın.
+
+```powershell
+pnpm install --frozen-lockfile
 pnpm --filter @kadro/api prisma:generate
-pnpm --filter @kadro/api db:migrate
+pnpm --filter @kadro/api build
+pnpm --filter @kadro/admin build
+pnpm --filter @kadro/mobile exec tsc --noEmit
 python -m pip install -r services/ingest/requirements.txt
-python -m unittest discover -s services/ingest/tests -v
-pnpm data:import:historical --file reference/minmaxlisans29072024.pdf --year 2024 --round 1 --education BACHELOR --dry-run
-pnpm data:import:historical --file reference/minmaxlisans29072024.pdf --year 2024 --round 1 --education BACHELOR --commit
-pnpm dev:api
-pnpm dev:mobile
-pnpm dev:admin
 ```
 
-**Dikkat:** `--commit` kayıtları yalnızca `DRAFT` olarak aktarır; yönetici onay mekanizması henüz uygulanmadığından mobil sorgular bunları göstermez. Bu güvenlik önlemidir. Veritabanı bağlantısı için `DATABASE_URL` ortam değişkeni ayarlanmalıdır.
+Geliştirme komutları: `pnpm dev:api`, `pnpm dev:admin`, `pnpm dev:mobile`. Mobil API adresini kendi erişilebilir geliştirme ortamınıza göre yapılandırın.
 
-API: `GET /api/v1/health`, `GET /api/v1/historical/rounds`, `GET /api/v1/historical/placements`, `GET /api/v1/historical/placements/:id`, `GET /api/v1/announcements`.
+Gerçek veritabanında migration/import otomatik çalışmaz. SQL incelemesi, güncel yedek/restore kontrolü ve ayrı kullanıcı onayı gerekir. Yazma yapan entegrasyon testleri yalnızca `kadroradar_ingestion_test_` önekli DB'yi kabul eder. `migrate reset` kullanmayın.
 
-Kaynak: https://www.osym.gov.tr/kpss20241-bazi-kamu-kurum-ve-kuruluslarin-kadro-ve-pozisyonlarina-yerlestirme-sonuclarina-iliskin-sayisal-bilgiler
+## Docker
 
-KadroRadar bağımsızdır; ÖSYM veya diğer kamu kurumlarının resmî uygulaması değildir.
+```powershell
+docker build -f Dockerfile.api -t kadroradar-api:rc1 .
+python infra/check-release-secrets.py
+```
+
+Image aynı origin üzerinde `/admin/`, `/privacy`, `/delete-account` ve `/api/v1` sunar; `PORT` değerine öncelik verir. `/api/v1/health` DB readiness kontrolüdür. Render Free için belge işlemleri ve worker'lar kapalı tutulmalıdır.
+
+RSS/CSV/JSON/PDF fixture testleri canlı aktarım değildir. Eksik başvuru tarihi açık ilan sayılmaz; nitelik kodları ve kadro koşulları doğrulanmadan kesin uygunluk üretilmez. Mevcut 504 yerel kayıt korunur; üç resmî PDF'nin toplam 919 kayıt testi ayrı DB'de yapılır.

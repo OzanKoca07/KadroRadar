@@ -1,0 +1,19 @@
+# Dış kurulum ve yayın kapıları
+
+Kullanıcının25 Ekim2026 güncel beyanı: production sunucu/domain yok; privacy/silme sayfaları yayımlanmadı; destek e-postası sonra belirlenecek; EAS hesabı/projesi ve önceden denenmiş preview APK mevcut. Google Play geliştirici hesabı oluşturuldu, kimlik incelemesi sürüyor; mağaza yayını tamamlanmadı. Render bağlı GitHub repository'yi görüyor. Güncel kurulum için `RENDER_DEPLOYMENT_SETUP.md` belgesini izleyin.
+
+- [ ] Hosting, domain/DNS ve gerçek production HTTPS API sağla. Sunucuya gerçek veritabanı secret'larını ayrı ortam/secret yönetimiyle ver; repoya veya EXPO_PUBLIC değişkenine koyma.
+- [ ] Gerçek DB yedeğini güncel olarak al ve restore doğrula; migration listesini gözden geçir. Kullanıcının açık migration onayı olmadan deploy/migrate/import çalıştırma.
+- [ ] İlk gerçek yönetici hesabını güvenilir operatör ortamında oluştur; gerçek parola veya hesap bu görevde oluşturulmadı. Self-registration kapalı varsayılanını bilinçli değerlendir; açık kayıt öncesi e-posta doğrulama/parola kurtarma hizmeti henüz yoktur.
+- [ ] `web/public-config.js` işletmeci, destek ve gerçek saklama süreleriyle doldur; süreleri gerçek backup/audit silme operasyonuna uygula. Privacy ve account-deletion sayfalarını HTTPS'te yayımla. Henüz hukuki olarak tamamlanmış politika iddiası yoktur.
+- [ ] EAS production ortamına gerçek `EXPO_PUBLIC_API_URL`, `EXPO_PUBLIC_PRIVACY_URL`, `EXPO_PUBLIC_ACCOUNT_DELETION_URL`, `EXPO_PUBLIC_SUPPORT_EMAIL` ekle. Config bu alanlar eksikse production build'i reddeder.
+- [ ] EAS Android upload-key/keystore ve Play App Signing'i bağla. Kimliği değiştirme: `com.kadroradar.app`, EAS `44bbc3b8-3306-4b9a-91c6-74a2eb2e0877`.
+- [ ] FCM v1 credential ve EAS `GOOGLE_SERVICES_JSON` file env ayarla; izin/teslim testleri tamamlanana kadar `NOTIFICATIONS_ENABLED=false` kalsın.
+- [ ] Production AAB oluştur, manifest/izin/SDK36/versionCode incele; `autoIncrement:true` yerel versionCode'u artırır. Artan değeri repoda/sürüm kaydında koru; geçmiş Play sürümünden büyük olmalı.
+- [ ] Play Console: geliştirici/uygulama erişimi, içerik derecelendirme, hedef kitle, hükümet bağlantısı beyanı, gerçek Data Safety, privacy/deletion URL, destek bilgisi, gerekiyorsa inceleyici test hesabı.
+- [ ] Mağaza açıklamasında bağımsızlığı ve resmî kaynakları göster. Başlık30, kısa açıklama80, tam açıklama4000 karakter sınırını Console'da yeniden kontrol et.512×512 ikon,1024×500 özellik görseli, en az2 gerçek telefon ekran görüntüsü hazırla; gerçekleşmemiş işlevi görselde gösterme.
+- [ ] Yeni RC1 binary'sini gerçek telefonda `RC1_ANDROID_TEST_PLAN.md` ile test et; ardından kapalı test track ve tester/geri bildirim kanalı kur.
+- [ ]13 Kasım2023 sonrasında açılan kişisel geliştirici hesaplarına ilişkin koşul uygulanıyorsa en az12 tester kesintisiz14 gün kapalı teste katılmalı; hesabın tür/tarih bilgisi doğrulanmadığı için kullanıcıya otomatik uygulanmış sayılmaz.
+- [ ] Her kaynak için kullanım/yeniden yayın iznini ayrı doğrula. Resmî Gazete günlük indirme, ÖSYM günlük tarama veya diğer izni belirsiz kaynakları otomatik etkinleştirme. Operatörün seçtiği public ÖSYM belgesinin bir kez okunması sürekli otomasyon izni değildir.
+
+Resmî politika kontrolü25 Ekim2026: [target API36](https://support.google.com/googleplay/android-developer/answer/11926878), [hesap silme uygulama ve web yolu](https://support.google.com/googleplay/android-developer/answer/13327111), [User Data/privacy](https://support.google.com/googleplay/android-developer/answer/10144311), [bağımsız kamu bilgisi uygulamaları](https://support.google.com/googleplay/android-developer/answer/9514050), [kapalı test koşulu](https://support.google.com/googleplay/android-developer/answer/14151465), [Play App Signing](https://support.google.com/googleplay/android-developer/answer/9842756). Politika incelemesi mağaza onayı değildir.

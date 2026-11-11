@@ -1,0 +1,10 @@
+const assert=require('node:assert/strict');
+require('../../infra/register-mobile-typescript.cjs');
+const {careerCardFacts}=require('../mobile/lib/career-card.ts');
+const row={title:'İ'.repeat(101),organization:'SYNTHETIC employer',sourceEvidence:{sourceId:'career',categoryCode:'PERSONNEL'},announcedAt:'2026-10-28T06:00:00Z',applicationEndAt:'2026-11-01T00:00:00Z',sourceCheckedAt:null};
+assert.equal(careerCardFacts(row).title,'İ'.repeat(100)+'...');
+assert.equal(careerCardFacts(row).deadline,null);
+assert.equal(careerCardFacts({...row,sourceCheckedAt:'2026-10-29T00:00:00Z'}).deadline,row.applicationEndAt);
+for(const categoryCode of ['INTERNAL','EDUCATION','EXAM_PLACEMENT','OTHER'])assert.equal(careerCardFacts({...row,sourceEvidence:{sourceId:'career',categoryCode}}),null);
+assert.equal(careerCardFacts({...row,sourceEvidence:{sourceId:'other',categoryCode:'PERSONNEL'}}),null);
+console.log('PASS career card: Unicode title limit, verified date and source/category contract');

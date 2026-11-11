@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SYNTHETIC CONTRACT FIXTURE. Not downloaded from Kariyer Kapisi. -->
+<rss version="2.0"><channel><title>SYNTHETIC test feed</title>
+<item><guid isPermaLink="false">SYNTHETIC-personnel-001</guid><link>https://kariyerkapisi.gov.tr/ilan/synthetic-001?utm_source=test</link><title>SENTETİK KURUM — Sözleşmeli personel alımı</title><category>Sözleşmeli Personel İlanları</category><pubDate>Wed, 28 Oct 2026 09:00:00 +0300</pubDate><description><![CDATA[<p>SYNTHETIC ignored full description.</p><img src="https://invalid.example/image.png">]]></description><enclosure url="https://invalid.example/image.png" type="image/png"/></item>
+<item><guid>SYNTHETIC-internal-002</guid><link>https://kariyerkapisi.gov.tr/ilan/synthetic-002</link><title>SENTETİK görevde yükselme duyurusu</title><category>Görevde Yükselme ve Unvan Değişikliği</category><pubDate>Wed, 28 Oct 2026 09:00:00 +0300</pubDate></item>
+<item><guid>SYNTHETIC-placement-003</guid><link>https://kariyerkapisi.gov.tr/ilan/synthetic-003</link><title>SENTETİK merkezi yerleştirme duyurusu</title><category>Merkezi Yerleştirme (ÖSYM)</category></item>
+<item><guid>SYNTHETIC-education-004</guid><link>https://kariyerkapisi.gov.tr/ilan/synthetic-004</link><title>SENTETİK yurt dışı eğitim duyurusu</title><category>Yurt Dışı Eğitim İlanları</category></item>
+</channel></rss>

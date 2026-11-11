@@ -1,0 +1,23 @@
+-- DESIGN DRAFT ONLY. Never run against production without separate review,
+-- Prisma model/migration integration and operator approval. Tests use PG16
+-- disposable databases. Existing User and CandidateSession are not altered.
+CREATE TABLE "AccountChallengeDraft" (
+  "id" TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+  "purpose" TEXT NOT NULL CHECK ("purpose" IN ('VERIFY_EMAIL','RESET_PASSWORD')),
+  "tokenHash" TEXT NOT NULL UNIQUE CHECK ("tokenHash" ~ '^[a-f0-9]{64}$'),
+  "emailHash" TEXT NOT NULL CHECK ("emailHash" ~ '^[a-f0-9]{64}$'),
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "expiresAt" TIMESTAMPTZ NOT NULL,
+  "consumedAt" TIMESTAMPTZ,
+  CHECK ("expiresAt" > "createdAt" AND "expiresAt" <= "createdAt" +
+    CASE WHEN "purpose" = 'RESET_PASSWORD' THEN INTERVAL '15 minutes' ELSE INTERVAL '24 hours' END),
+  CHECK ("consumedAt" IS NULL OR "consumedAt" >= "createdAt")
+);
+CREATE UNIQUE INDEX "AccountChallengeDraft_one_pending" ON "AccountChallengeDraft"("userId","purpose") WHERE "consumedAt" IS NULL;
+CREATE INDEX "AccountChallengeDraft_expiry" ON "AccountChallengeDraft"("expiresAt");
+CREATE TABLE "AccountEmailVerificationDraft" (
+  "userId" TEXT PRIMARY KEY REFERENCES "User"("id") ON DELETE CASCADE,
+  "emailHash" TEXT NOT NULL CHECK ("emailHash" ~ '^[a-f0-9]{64}$'),
+  "verifiedAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

@@ -1,0 +1,39 @@
+-- DESIGN DRAFT ONLY. Not a Prisma migration; never run against production.
+-- Separate general career news from personnel Announcement/application eligibility.
+CREATE TABLE "OfficialCareerNotice" (
+  "id" TEXT PRIMARY KEY,
+  "sourceId" TEXT NOT NULL,
+  "guidHash" CHAR(64) NOT NULL,
+  "canonicalUrl" TEXT NOT NULL,
+  "category" TEXT NOT NULL CHECK ("category" IN ('EXAM_PLACEMENT','INTERNAL','EDUCATION','OTHER')),
+  "organization" TEXT,
+  "title" TEXT NOT NULL,
+  "editorSummary" VARCHAR(180),
+  "announcedAt" TIMESTAMPTZ,
+  "status" TEXT NOT NULL DEFAULT 'PENDING_REVIEW',
+  "sourcePolicyRevision" TEXT,
+  "sourceCheckedAt" TIMESTAMPTZ,
+  "publishedAt" TIMESTAMPTZ,
+  "version" INTEGER NOT NULL DEFAULT 1,
+  UNIQUE ("sourceId", "guidHash")
+);
+CREATE TABLE "OfficialCareerNoticeRevision" (
+  "id" TEXT PRIMARY KEY,
+  "noticeId" TEXT NOT NULL REFERENCES "OfficialCareerNotice"("id"),
+  "metadataSha256" CHAR(64) NOT NULL,
+  "documentSha256" CHAR(64) NOT NULL,
+  "metadata" JSONB NOT NULL,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE ("noticeId", "metadataSha256")
+);
+CREATE TABLE "OfficialCareerNoticeReviewAudit" (
+  "id" TEXT PRIMARY KEY,
+  "noticeId" TEXT NOT NULL REFERENCES "OfficialCareerNotice"("id"),
+  "actor" TEXT NOT NULL,
+  "action" TEXT NOT NULL,
+  "snapshot" JSONB NOT NULL,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- Future implementation must validate official URLs, roles/CSRF, immutable source
+-- revisions, optimistic version, active source rights and factual summary review.
+-- No passwords, descriptions, enclosure images or original documents belong here.

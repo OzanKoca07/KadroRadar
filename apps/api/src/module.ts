@@ -1,5 +1,12 @@
-import { Module, Controller, Get, Param, Query, Injectable, OnModuleDestroy, NotFoundException, UnauthorizedException, BadRequestException, Headers, Post, Body } from '@nestjs/common';
+import { Module, Controller, Get, Param, Query, Injectable, OnModuleDestroy, NotFoundException, UnauthorizedException, BadRequestException, Headers, Post, Body, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaClient, Prisma } from '@prisma/client';
+import { AnnouncementsModule } from './announcements.controller';
+import { CandidateModule, CandidateAuth } from './candidate';
+import {GazetteModule} from './gazette';
+import {HistoricalImportModule} from './historical-import';
+import { Req } from '@nestjs/common';
+import {APP_FILTER} from '@nestjs/core';
+import {DatabaseErrorFilter} from './database-errors';
 
 @Injectable()
 class Db extends PrismaClient implements OnModuleDestroy {
@@ -35,7 +42,7 @@ class ApiController {
   constructor(private readonly db: Db) {}
 
   @Get('health')
-  health() { return { status: 'ok' }; }
+  async health() {try{await this.db.$queryRaw`SELECT 1`;const sha=process.env.RENDER_GIT_COMMIT;return {status:'ok',database:'ready',...(sha&&/^[a-f0-9]{40}$/.test(sha)?{release:{commit:sha}}:{})};}catch{throw new ServiceUnavailableException('Database unavailable');} }
 
   @Get('historical/rounds')
   rounds() {
@@ -58,15 +65,20 @@ class ApiController {
     @Query('educationLevel') educationLevel?: string,
     @Query('minScoreGte') minScoreGte?: string,
     @Query('minScoreLte') minScoreLte?: string,
+    @Query('positionCode') positionCode?: string,
+    @Query('maxScoreGte') maxScoreGte?: string,
+    @Query('maxScoreLte') maxScoreLte?: string,
   ) {
     const p = integerInRange(page, 1, 1, 100000);
     const l = integerInRange(limit, 20, 1, 100);
     const period: Prisma.PlacementRoundWhereInput = {};
     if (year && /^\d{4}$/.test(year)) period.year = Number(year);
     if (round && /^\d+$/.test(round)) period.sequenceNo = Number(round);
-    if (educationLevel?.trim()) period.educationLevel = educationLevel.trim();
+    if (educationLevel?.trim()) period.educationLevel = educationLevel.trim()==='SECONDARY'?'HIGH_SCHOOL':educationLevel.trim();
+    if(positionCode!==undefined&&!/^[123]\d{8}$/.test(positionCode))throw new BadRequestException('Invalid positionCode');
     const where: Prisma.HistoricalPlacementWhereInput = {
       approvedAt: { not: null },
+      ...(positionCode?{positionCode}:{}),
       ...(city?.trim() ? { city: { contains: city.trim(), mode: 'insensitive' } } : {}),
       ...(title?.trim() ? { title: { contains: title.trim(), mode: 'insensitive' } } : {}),
       ...(institution?.trim() ? { institutionRawName: { contains: institution.trim(), mode: 'insensitive' } } : {}),
@@ -75,9 +87,15 @@ class ApiController {
     const gte = decimalOrUndefined(minScoreGte);
     const lte = decimalOrUndefined(minScoreLte);
     if (gte || lte) where.minScore = { ...(gte ? { gte } : {}), ...(lte ? { lte } : {}) };
+    const maxGte=decimalOrUndefined(maxScoreGte),maxLte=decimalOrUndefined(maxScoreLte);
+    for(const [raw,value] of [[minScoreGte,gte],[minScoreLte,lte],[maxScoreGte,maxGte],[maxScoreLte,maxLte]] as const){
+      if(raw!==undefined&&raw!==''&&(!value||value.lessThan(0)||value.greaterThan(100)))throw new BadRequestException('Score filter must be a decimal between 0 and 100');
+    }
+    if(gte&&lte&&gte.greaterThan(lte)||maxGte&&maxLte&&maxGte.greaterThan(maxLte))throw new BadRequestException('Invalid score range');
+    if(maxGte||maxLte)where.maxScore={...(maxGte?{gte:maxGte}:{}),...(maxLte?{lte:maxLte}:{})};
     const [items, total] = await this.db.$transaction([
       this.db.historicalPlacement.findMany({
-        where, skip: (p - 1) * l, take: l, orderBy: { positionCode: 'asc' },
+        where, skip: (p - 1) * l, take: l, orderBy: [{positionCode:'asc'},{id:'asc'}],
         select: {
           id: true, positionCode: true, institutionRawName: true, title: true,
           city: true, quota: true, placedCount: true, vacantCount: true,
@@ -89,6 +107,7 @@ class ApiController {
       this.db.historicalPlacement.count({ where }),
     ]);
     return { items, total, page: p, limit: l, pages: Math.ceil(total / l),
+      filterCapabilities:{minScoreRange:true,maxScoreRange:true},
       qualificationNote: 'Nitelik bilgisi doğrulanmadı: yalnızca tarihsel puan karşılaştırması' };
   }
 
@@ -109,14 +128,13 @@ class ApiController {
     return { ...record, qualificationNote: 'Nitelik kodları doğrulanmadan uygunluk kararı üretilemez.' };
   }
 
-  @Get('announcements')
-  announcements() { return { items: [], sourceStatus: 'Resmî ilan kaynağı henüz bağlanmadı; güncel ilanlar doğrulanamıyor.' }; }
 }
 
 
 // This review token is a LOCAL DEVELOPMENT credential, not production user authentication.
 // Do not expose these endpoints publicly before replacing with authenticated RBAC.
 function requireLocalReviewer(auth?: string): void {
+  if (process.env.NODE_ENV === 'production') throw new UnauthorizedException('Account session required');
   const configured = process.env.ADMIN_REVIEW_TOKEN;
   if (!configured || configured.length < 32 || !auth?.startsWith('Bearer '))
     throw new UnauthorizedException('Local reviewer token required (minimum 32 characters)');
@@ -129,11 +147,15 @@ function requireLocalReviewer(auth?: string): void {
 
 @Controller('admin/imports')
 class ReviewController {
-  constructor(private readonly db: Db) {}
+  constructor(private readonly db: Db, private readonly candidateAuth: CandidateAuth) {}
+  private async reviewer(req:any, auth?:string) {
+    if(process.env.NODE_ENV !== 'production' && auth && !/Bearer [a-f0-9]{64}$/.test(auth)) {requireLocalReviewer(auth);return 'LOCAL_REVIEW_TOKEN';}
+    return (await this.candidateAuth.role(req,['SYSTEM_ADMIN','REVIEWER'],req.method!=='GET')).id;
+  }
 
   @Get()
-  batches(@Headers('authorization') authorization?: string) {
-    requireLocalReviewer(authorization);
+  async batches(@Req() req:any, @Headers('authorization') authorization?: string) {
+    await this.reviewer(req,authorization);
     return this.db.importBatch.findMany({
       orderBy: { createdAt: 'desc' }, take: 100,
       select: { id: true, sourceSha256: true, state: true, rowCount: true, errorCount: true, createdAt: true,
@@ -143,8 +165,8 @@ class ReviewController {
 
   @Get(':id')
   async detail(@Param('id') id: string, @Headers('authorization') authorization?: string,
-    @Query('page') page?: string) {
-    requireLocalReviewer(authorization);
+    @Query('page') page?: string, @Req() req?:any) {
+    await this.reviewer(req,authorization);
     const batch = await this.db.importBatch.findUnique({ where: { id } });
     if (!batch) throw new NotFoundException('İçe aktarma partisi bulunamadı');
     const p = integerInRange(page, 1, 1, 100000);
@@ -155,13 +177,12 @@ class ReviewController {
 
   @Post(':id/approve')
   async approve(@Param('id') id: string, @Headers('authorization') authorization?: string,
-    @Body() body?: { confirmation?: string }) {
-    requireLocalReviewer(authorization);
-    if (body?.confirmation !== '504 KAYDI KONTROL ETTİM')
-      throw new BadRequestException('Toplu onay için açık yönetici teyidi gerekiyor');
+    @Body() body?: { confirmation?: string }, @Req() req?:any) {
+    const actor = await this.reviewer(req,authorization);
     return this.db.$transaction(async (tx) => {
       const batch = await tx.importBatch.findUnique({ where: { id } });
       if (!batch) throw new NotFoundException('İçe aktarma partisi bulunamadı');
+      if(body?.confirmation!==`${batch.rowCount} KAYDI KONTROL ETTİM`)throw new BadRequestException('Partinin gerçek satır sayısıyla açık teyit gerekiyor');
       if (batch.state !== 'STAGED' || batch.errorCount !== 0 || batch.rowCount <= 0)
         throw new BadRequestException('Parti onaya uygun değil');
       const source = await tx.sourceDocument.findUnique({ where: { sha256: batch.sourceSha256 } });
@@ -200,11 +221,11 @@ class ReviewController {
       if (updated.count !== rows.length) throw new BadRequestException('Bazı kayıtlar önceden onaylanmış');
       await tx.importBatch.update({ where: { id }, data: { state: 'APPROVED' } });
       await tx.sourceDocument.update({ where: { id: source.id }, data: { state: 'APPROVED' } });
-      await tx.reviewAudit.create({ data: { batchId: id, action: 'APPROVE', actor: 'LOCAL_REVIEW_TOKEN', count: updated.count } });
+      await tx.reviewAudit.create({ data: { batchId: id, action: 'APPROVE', actor, count: updated.count } });
       return { state: 'APPROVED', approvedCount: updated.count };
     }, { timeout: 15000 });
   }
 }
 
-@Module({ controllers: [ApiController, ReviewController], providers: [Db] })
+@Module({ imports: [AnnouncementsModule, CandidateModule, GazetteModule,HistoricalImportModule], controllers: [ApiController, ReviewController], providers: [Db,{provide:APP_FILTER,useClass:DatabaseErrorFilter}] })
 export class AppModule {}
