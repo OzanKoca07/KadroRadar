@@ -75,7 +75,10 @@
     "infra/prepare-automation-release.cjs",
     "apps/api/src/environment.ts",
     ".github/workflows/ci.yml",
-    "apps/api/test-admin-browser.cjs"
+    "apps/api/test-admin-browser.cjs",
+    "apps/mobile/lib/presentation.ts",
+    "infra/generate-prisma.cjs",
+    "infra/test-prisma-engine.cjs"
   ],
   "documentationAndInactiveTemplates": [
     "docs/AUTOMATION_RELEASE_FILES.json",

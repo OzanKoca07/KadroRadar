@@ -27,6 +27,7 @@ jobs:
           node-version: 22
       - run: node infra/test-render-database.cjs
       - run: node infra/test-locked-prisma.cjs
+      - run: node infra/test-prisma-engine.cjs
       - run: docker build -f Dockerfile.api -t kadroradar-api:rc1 .
       - run: node infra/test-render-readiness.cjs
       - run: node infra/test-rss-runtime.cjs
@@ -149,6 +150,7 @@ jobs:
       - run: node apps/api/test-historical-import.cjs
       - run: node apps/api/test-historical-formats.cjs
       - run: pnpm --filter @kadro/mobile exec tsc --noEmit
+      - run: node infra/test-application-dates.cjs
       - run: node apps/api/test-source-rights-flow.cjs
       - run: node apps/api/test-source-validators.cjs
       - run: node apps/api/test-career-rss.cjs
