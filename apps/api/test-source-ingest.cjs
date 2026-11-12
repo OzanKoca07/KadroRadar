@@ -1,5 +1,5 @@
 // Signed machine contract with SYNTHETIC reports/permissions; disposable PG16 only.
-require('reflect-metadata');require('./test-account-fixtures.cjs').guard();
+require('reflect-metadata');process.env.SOURCE_INGEST_MODE='automatic';require('./test-account-fixtures.cjs').guard();
 const assert=require('node:assert/strict'),{randomUUID,randomBytes,createHash}=require('node:crypto'),{PrismaClient}=require('@prisma/client'),{NestFactory}=require('@nestjs/core'),{AppModule}=require('./dist/module'),{SourceOperations}=require('./dist/source-operations'),auth=require('../../packages/shared/source-ingest.cjs'),{licensed}=require('./test-source-fixtures.cjs');
 const registry=require('../../packages/official-sources.json'),saved=structuredClone(registry.gazette),envKeys=['SOURCE_AUTOMATION_APPROVED','SOURCE_REMOTE_INGEST_ENABLED','SOURCE_INGEST_HMAC_KEY','SOURCE_INGEST_ORIGIN'],savedEnv=Object.fromEntries(envKeys.map(k=>[k,process.env[k]])),sha=s=>createHash('sha256').update(s).digest('hex');
 (async()=>{const db=new PrismaClient();let app,checks=0,phase='DISABLED';const ids=['gazette','external:gazette','policy:gazette','alert:gazette','request:gazette'];let states=[];try{

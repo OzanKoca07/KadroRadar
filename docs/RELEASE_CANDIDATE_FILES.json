@@ -78,13 +78,20 @@
     "apps/api/test-admin-browser.cjs",
     "apps/mobile/lib/presentation.ts",
     "infra/generate-prisma.cjs",
-    "infra/test-prisma-engine.cjs"
+    "infra/test-prisma-engine.cjs",
+    "packages/shared/source-pilot.cjs",
+    "apps/api/src/source-pilot.ts",
+    "apps/api/test-source-pilot.cjs",
+    "services/ingest/source_pilot.py",
+    "services/ingest/test_source_pilot.py",
+    "infra/test-source-pilot.cjs"
   ],
   "documentationAndInactiveTemplates": [
     "docs/AUTOMATION_RELEASE_FILES.json",
     "docs/RELEASE_CANDIDATE_FILES.json",
     "docs/KADRORADAR_RELEASE_READINESS.md",
-    "docs/KADRORADAR_CI_FAILURE_FIX.md"
+    "docs/KADRORADAR_CI_FAILURE_FIX.md",
+    "docs/KADRORADAR_STAGING_AND_ANDROID_READINESS.md"
   ],
   "separateOperatorReviewPreserveUnchanged": [
     "docs/ADMIN_STATUS_DIAGNOSIS.md",

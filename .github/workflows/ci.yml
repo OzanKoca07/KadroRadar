@@ -33,6 +33,7 @@ jobs:
       - run: node infra/test-rss-runtime.cjs
       - run: node infra/test-ephemeral-runtime.cjs
       - run: node infra/test-source-storage.cjs
+      - run: node infra/test-source-pilot.cjs
       - run: node infra/test-source-ingest-runner.cjs
       - run: node infra/test-r2-connection-pilot.cjs
       - run: node infra/test-rss-runtime.cjs
@@ -62,6 +63,7 @@ jobs:
       - run: python -m unittest discover -s services/ingest -p test_source_probe.py -v
       - run: python -m unittest discover -s services/ingest -p test_feed_metadata.py -v
       - run: python -m unittest discover -s services/ingest -p test_career_rss.py -v
+      - run: python -m unittest discover -s services/ingest -p test_source_pilot.py -v
       - run: python -m unittest discover -s services/ingest -p test_career_worker.py -v
       - run: python -m unittest discover -s services/ingest -p test_career_detail.py -v
       - run: python -m unittest discover -s services/ingest -p test_application_dates.py -v
@@ -169,6 +171,7 @@ jobs:
       - run: node apps/api/test-career-publication.cjs
       - run: node apps/api/test-live-announcements.cjs
       - run: node apps/api/test-automation-activation.cjs
+      - run: node apps/api/test-source-pilot.cjs
       - run: node apps/api/test-source-ingest.cjs
       - run: node apps/api/test-career-source-ingest.cjs
       - run: node apps/api/test-automation-auth-compat.cjs

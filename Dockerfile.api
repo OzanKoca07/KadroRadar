@@ -33,7 +33,7 @@ COPY --from=build --chown=node:node /app/packages /app/packages
 COPY --from=build --chown=node:node /app/apps/admin/dist /app/public/admin
 COPY --chown=node:node infra/source-worker-start.cjs /app/infra/source-worker-start.cjs
 COPY --chown=node:node web /app/public/legal
-COPY --chown=node:node services/ingest/gazette_ephemeral.py services/ingest/gazette_download.py services/ingest/official_gazette.py services/ingest/official_rss.py services/ingest/source_rights.py services/ingest/feed_metadata.py services/ingest/career_rss.py services/ingest/career_worker.py services/ingest/career_detail.py services/ingest/application_dates.py services/ingest/rss_transport.py services/ingest/source_adapters.py services/ingest/source_probe.py services/ingest/import_historical.py services/ingest/historical_tables.py services/ingest/osym_web.py /app/services/ingest/
+COPY --chown=node:node services/ingest/source_pilot.py services/ingest/gazette_ephemeral.py services/ingest/gazette_download.py services/ingest/official_gazette.py services/ingest/official_rss.py services/ingest/source_rights.py services/ingest/feed_metadata.py services/ingest/career_rss.py services/ingest/career_worker.py services/ingest/career_detail.py services/ingest/application_dates.py services/ingest/rss_transport.py services/ingest/source_adapters.py services/ingest/source_probe.py services/ingest/import_historical.py services/ingest/historical_tables.py services/ingest/osym_web.py /app/services/ingest/
 RUN mkdir -p /app/.local/gazette /app/.local/historical /app/.local/sources /var/data && chown -R node:node /app/.local /var/data
 ENV NODE_ENV=production
 ENV PROCESS_ROLE=api

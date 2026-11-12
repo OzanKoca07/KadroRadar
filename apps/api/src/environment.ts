@@ -1,6 +1,8 @@
 import {recoveryConfiguration} from './account-mail';
 import {scanIntervalHours,scanMode} from './announcement-scan';
 export function validateEnvironment(env:NodeJS.ProcessEnv){
+ if(env.SOURCE_INGEST_MODE==='staging-only'&&env.SOURCE_SYNC_ENABLED==='true')throw Error('Pilot cannot enable scheduler');
+ if(env.SOURCE_INGEST_MODE!==undefined&&!['disabled','staging-only','automatic'].includes(env.SOURCE_INGEST_MODE))throw Error('Invalid source execution mode');
  if(env.SOURCE_AUTOMATION_APPROVED!==undefined&&!['true','false'].includes(env.SOURCE_AUTOMATION_APPROVED))throw Error('Invalid automation approval');
  if(env.SOURCE_REMOTE_INGEST_ENABLED!==undefined&&!['true','false'].includes(env.SOURCE_REMOTE_INGEST_ENABLED))throw Error('Invalid remote source flag');
  if(env.SOURCE_REMOTE_INGEST_ENABLED==='true')require(require('node:path').resolve(__dirname,'../../../packages/shared/source-ingest.cjs')).config(env.SOURCE_INGEST_ORIGIN,env.SOURCE_INGEST_HMAC_KEY);
