@@ -22,6 +22,6 @@ export function positionFilters(query:Record<string,string|undefined>):Prisma.An
  if(title){if(title.length>100)throw new BadRequestException('positionTitle');conditions.push({title:{contains:title,mode:'insensitive'}});}
  if(query.city?.trim()&&conditions.length){const city={contains:query.city.trim().slice(0,100),mode:'insensitive' as const};conditions.push({OR:[{city},{announcement:{city}}]});}
  const result:Prisma.AnnouncementWhereInput[]=conditions.length?[{positions:{some:{verifiedAt:{not:null},AND:conditions}}}]:[];
- if(query.deadlineBefore){const date=query.deadlineBefore;if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date))||new Date(date).toISOString().slice(0,10)!==date)throw new BadRequestException('deadlineBefore YYYY-MM-DD');result.push({applicationEndAt:{lte:new Date(date+'T23:59:59.999+03:00')}});}
+ if(query.deadlineBefore){const date=query.deadlineBefore;if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date))||new Date(date).toISOString().slice(0,10)!==date)throw new BadRequestException('deadlineBefore YYYY-MM-DD');const next=new Date(Date.parse(date+'T00:00:00Z')+86400000).toISOString().slice(0,10);result.push({OR:[{applicationEndAt:{lt:new Date(next+'T00:00:00+03:00')}},{applicationEndAt:null,sourceEvidence:{path:['applicationDates','end','date'],lte:date}}]});}
  return result;
 }

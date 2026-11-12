@@ -1,6 +1,9 @@
 import {recoveryConfiguration} from './account-mail';
 import {scanIntervalHours,scanMode} from './announcement-scan';
 export function validateEnvironment(env:NodeJS.ProcessEnv){
+ if(env.SOURCE_AUTOMATION_APPROVED!==undefined&&!['true','false'].includes(env.SOURCE_AUTOMATION_APPROVED))throw Error('Invalid automation approval');
+ if(env.SOURCE_REMOTE_INGEST_ENABLED!==undefined&&!['true','false'].includes(env.SOURCE_REMOTE_INGEST_ENABLED))throw Error('Invalid remote source flag');
+ if(env.SOURCE_REMOTE_INGEST_ENABLED==='true')require(require('node:path').resolve(__dirname,'../../../packages/shared/source-ingest.cjs')).config(env.SOURCE_INGEST_ORIGIN,env.SOURCE_INGEST_HMAC_KEY);
  scanIntervalHours(env.ANNOUNCEMENT_SCAN_INTERVAL_HOURS);scanMode(env.ANNOUNCEMENT_SCAN_MODE);
  if(env.PROCESS_ROLE!==undefined&&!['api','source-worker','push-worker','combined'].includes(env.PROCESS_ROLE))throw Error('Invalid PROCESS_ROLE');
  if(env.ACCOUNT_RECOVERY_ENABLED!==undefined&&!['true','false'].includes(env.ACCOUNT_RECOVERY_ENABLED))throw Error('Invalid account recovery flag');

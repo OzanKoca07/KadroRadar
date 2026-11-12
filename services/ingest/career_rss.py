@@ -4,6 +4,7 @@ Descriptions/enclosures are never retained or fetched. Feed metadata is not
 verified application conditions and cannot itself authorize publication.
 """
 import argparse
+import os
 import hashlib
 import json
 import re
@@ -38,6 +39,24 @@ def canonical_url(value, feed):
     result = urlunsplit(('https', u.hostname, u.path or '/', urlencode(sorted(query)), ''))
     if urlsplit(result).path.rstrip('/').casefold() in ('', '/rss'): raise ValueError('DETAIL_URL_REQUIRED')
     return result
+
+
+def career_feed_url(institutions=(), announcement_type=None, city=None, search=None):
+    """Public generator contract observed in official RssLinkiAl JS, not a fetch."""
+    if len(institutions) > 100 or any(not re.fullmatch(r'[1-9][0-9]{0,9}', str(v)) for v in institutions):
+        raise ValueError('INVALID_INSTITUTION_FILTER')
+    query = []
+    if institutions: query.append(('k', ','.join(map(str, institutions))))
+    if announcement_type:
+        if not isinstance(announcement_type, str) or len(announcement_type) > 250 or any(ord(c) < 32 for c in announcement_type): raise ValueError('INVALID_TYPE_FILTER')
+        query.append(('t', announcement_type))
+    if city is not None:
+        if isinstance(city, bool) or not isinstance(city, int) or not 1 <= city <= 999999999: raise ValueError('INVALID_CITY_FILTER')
+        query.append(('i', str(city)))
+    if search:
+        if not isinstance(search, str) or len(search) > 250 or any(ord(c) < 32 for c in search): raise ValueError('INVALID_SEARCH_FILTER')
+        query.append(('s', search))
+    return 'https://kariyerkapisi.gov.tr/RSS' + ('?' + urlencode(query) if query else '')
 
 
 def parse_career_feed(data, feed_url=None, now=None):
@@ -101,21 +120,29 @@ def parse_career_feed(data, feed_url=None, now=None):
             'liveFetch': False, 'fullDocumentPublication': 'DISABLED'}
 
 
-def sync(output):
-    source = REGISTRY['career']; feed = source['feed']
+def sync(output, source=None):
+    source = source or REGISTRY['career']; feed = source['feed']
     require_network_permission(source, feed, require_enabled=True)
     check_robots('career', feed)
     from rss_transport import fetch_feed
     state = json.loads(output.read_text(encoding='utf-8')) if output.exists() else {}
     result = fetch_feed(feed, 'career', state)
+    if result['notModified'] and os.environ.get('CAREER_DETAIL_ENRICHMENT_ENABLED')=='true' and state.get('detailRows'):
+        from career_detail import enrich_report
+        report={'sourceId':'career','format':'RSS2','rows':state['detailRows'],'unresolved':[],'documentSha256':state['transport']['documentSha256']}
+        enriched=enrich_report(report,source,cursor=state['transport'].get('detailCursor',0))
+        return {**enriched,'notModified':True,'missingGuids':[],'transport':{**state['transport'],'detailCursor':enriched['detailMetrics']['nextCursor']}}
     if result['notModified']:
         return {'notModified': True, 'rows': [], 'unresolved': [], 'missingGuids': [], 'transport': state.get('transport', {})}
     report = parse_career_feed(result['body'], feed)
     # An incomplete/invalid snapshot must not generate disappearance signals or advance validators.
     if report['unresolved']: raise ValueError('INCOMPLETE_FEED_REVIEW_REQUIRED')
+    if os.environ.get('CAREER_DETAIL_ENRICHMENT_ENABLED') == 'true':
+        from career_detail import enrich_report
+        report = enrich_report(report, source,cursor=state.get('transport',{}).get('detailCursor',0))
     current = [row['guidHash'] for row in report['rows']]
     missing = sorted(set(state.get('transport', {}).get('knownGuids', [])) - set(current))
-    transport = {**result['transport'], 'documentSha256': report['documentSha256'], 'knownGuids': current}
+    transport = {**result['transport'], 'documentSha256': report['documentSha256'], 'knownGuids': current,'detailCursor':report.get('detailMetrics',{}).get('nextCursor',0)}
     payload = {**report, 'liveFetch': True, 'notModified': False, 'missingGuids': missing, 'transport': transport}
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_suffix('.tmp'); temporary.write_text(json.dumps({'transport': transport}), encoding='utf-8'); temporary.replace(output)
@@ -132,4 +159,5 @@ if __name__ == '__main__':
         print(json.dumps(result, ensure_ascii=True))
     except Exception as error:
         code = str(error) if isinstance(error, ValueError) and str(error) in ('INCOMPLETE_FEED_REVIEW_REQUIRED', 'CONFLICTING_GUID', 'UNSAFE_XML', 'RSS2_REQUIRED') else classify_error(error)
-        print(json.dumps({'status': code, 'errorType': type(error).__name__})); raise SystemExit(1)
+        retry = getattr(error, 'retry_after_seconds', None)
+        print(json.dumps({'status': code, 'errorType': type(error).__name__, **({'retryAfterSeconds': retry} if isinstance(retry, int) else {})})); raise SystemExit(1)

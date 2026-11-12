@@ -1,0 +1,24 @@
+{
+  "Rules": [
+    {
+      "ID": "small-receipts-ninety-days",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "receipts/"
+      },
+      "Expiration": {
+        "Days": 90
+      }
+    },
+    {
+      "ID": "connection-pilot-one-day",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "pilots/r2-connection/"
+      },
+      "Expiration": {
+        "Days": 1
+      }
+    }
+  ]
+}

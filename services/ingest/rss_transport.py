@@ -4,9 +4,20 @@ import ipaddress
 import socket
 import ssl
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 import urllib.error
 from urllib.parse import urlsplit
 from official_rss import official_url, USER_AGENT
+
+
+def retry_after_seconds(value, now=None):
+    if not isinstance(value, str) or len(value) > 128: return None
+    now = now or datetime.now(timezone.utc)
+    try:
+        seconds = int(value) if value.isdigit() else int((parsedate_to_datetime(value) - now).total_seconds())
+        return max(0, min(seconds, 366 * 86400))
+    except (ValueError, TypeError, OverflowError): return None
 
 
 def fetch_feed(url, source_id, state, timeout=12):
@@ -30,7 +41,10 @@ def fetch_feed(url, source_id, state, timeout=12):
         if response.status == 304:
             if not any(k in headers for k in ('If-None-Match', 'If-Modified-Since')): raise ValueError('UNEXPECTED_304')
             return {'notModified': True}
-        if response.status != 200: raise urllib.error.HTTPError(url, response.status, 'SOURCE_HTTP_STATUS', {}, None)
+        if response.status != 200:
+            error = urllib.error.HTTPError(url, response.status, 'SOURCE_HTTP_STATUS', {}, None)
+            if response.status == 429: error.retry_after_seconds = retry_after_seconds(response.getheader('Retry-After'))
+            raise error
         if response.getheader('Content-Encoding', 'identity').lower() != 'identity': raise ValueError('UNSUPPORTED_CONTENT_ENCODING')
         body = bytearray(); began = time.monotonic()
         while True:

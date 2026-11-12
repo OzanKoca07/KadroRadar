@@ -144,8 +144,8 @@ class RealGazette33380Tests(unittest.TestCase):
         self.assertEqual(sum(p['quota'] for p in item['positions'] if p['title'].startswith('Sağlık Teknikeri')),9)
         self.assertEqual({p['requirements']['kpssScoreType'] for p in item['positions']},{'P93','P94'})
         self.assertTrue(all(p['requirements']['kpssMinimumScore']==60 for p in item['positions']))
-        self.assertEqual(item['applicationStartAt'],'2026-09-24T09:00:00+03:00')
-        self.assertEqual(item['applicationEndAt'],'2026-10-09T13:00:00+03:00')
+        self.assertIsNone(item['applicationStartAt']);self.assertEqual(item['applicationDates']['start']['raw'],'2026-09-24T09:00:00')
+        self.assertIsNone(item['applicationEndAt']);self.assertEqual(item['applicationDates']['end']['raw'],'2026-10-09T13:00:00');self.assertEqual(item['applicationDates']['mode'],'CALENDAR')
 
     def test_atalan_conditions_and_uncertain_hours(self):
         item=next(c for c in self.result['candidates'] if 'Atalan' in c['organization'])

@@ -1,0 +1,46 @@
+# SUPERSEDED: GitHub Actions + private R2 + signed Render ingest is the selected architecture.
+# Retained only for historical reference; do not provision this worker.
+# INACTIVE. Creating this paid service/disk requires explicit approval.
+services:
+  - type: worker
+    name: kadroradar-source-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile.api
+    branch: feature/announcements-core
+    autoDeployTrigger: 'off'
+    # Legacy standard, currently 1 CPU / 2 GB. Confirm Dashboard pricing before creation.
+    plan: 1c-2g
+    dockerCommand: node infra/source-worker-start.cjs
+    disk:
+      name: source-private-data
+      mountPath: /var/data
+      sizeGB: 5
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        value: https://kadrooradar.com
+      - key: NODE_ENV
+        value: production
+      - key: PROCESS_ROLE
+        value: source-worker
+      - key: WORKER_DATA_DIR
+        value: /var/data
+      - key: SOURCE_STATE_DIR
+        value: /var/data/sources
+      - key: GAZETTE_STORAGE_DIR
+        value: /var/data/gazette
+      - key: SOURCE_SYNC_ENABLED
+        value: 'false'
+      - key: SOURCE_WORKER_ONCE
+        value: 'false'
+      - key: DOCUMENT_UPLOADS_ENABLED
+        value: 'false'
+      - key: CAREER_DETAIL_ENRICHMENT_ENABLED
+        value: 'false'
+      - key: NOTIFICATIONS_ENABLED
+        value: 'false'
+      - key: ALLOW_SELF_REGISTRATION
+        value: 'false'
+      - key: ACCOUNT_RECOVERY_ENABLED
+        value: 'false'

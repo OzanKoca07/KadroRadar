@@ -58,6 +58,7 @@ const {NestFactory}=require('@nestjs/core');const {PrismaClient}=require('@prism
     alternate=(await request('/admin/announcement-imports',{token})).find(r=>r.id===alternate.id);
     await request('/admin/announcement-imports/'+alternate.id+'/review',{method:'POST',token,body:{version:alternate.version,action:'PUBLISH'},status:400});
    }
+   await db.user.update({where:{id:user.id},data:{role:'USER'}});await require('./test-account-fixtures.cjs').verifiedCandidate(db,user);
    assert.equal((await request('/account/matches/'+detail.id,{token})).items[0].outcome,'UNKNOWN');
    const open=await request('/announcements?q='+encodeURIComponent(target.organization));assert.ok(!open.items.some(i=>i.id===detail.id));
    if(real&&target.organization.includes('Niğde')){assert.equal(detail.quota,29);const archive=await request('/announcements?view=archive&q='+encodeURIComponent(target.organization));assert.ok(archive.items.some(i=>i.id===detail.id));}
@@ -66,7 +67,7 @@ const {NestFactory}=require('@nestjs/core');const {PrismaClient}=require('@prism
   }
   await db.user.update({where:{id:user.id},data:{role:'SYSTEM_ADMIN'}});
   await request('/admin/gazette-documents/'+first.documentId+'/file',{method:'DELETE',token});
-  await request('/account',{method:'DELETE',token});
+  await db.user.update({where:{id:user.id},data:{role:'USER'}});await request('/account',{method:'DELETE',token});
   console.log(JSON.stringify({status:'PASS',mode:real?'REAL_LOCAL_PDF':'SYNTHETIC_OFFLINE_FIXTURE',pageCount:first.pageCount,inspectedPages:first.inspectedPages,flaggedPages:first.metrics.flaggedPages,candidates:first.candidates.length,created:first.created,duplicates:twice.duplicate,reviewedAndPublishedInIsolatedDb:published,publishedPositionRows:positionRows,productionWrites:0,androidDeviceChecks:0}));
  }finally{await app.close();await db.$disconnect();if(!real&&pdf)await fs.unlink(pdf).catch(()=>{});}
 })().catch(error=>{console.error(error);process.exitCode=1;});

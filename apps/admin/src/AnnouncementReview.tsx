@@ -5,6 +5,7 @@ import React, {useState,useEffect} from 'react';
 import {GazetteUpload} from './GazetteUpload.tsx';
 const API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api/v1';
 export function AnnouncementReview({onSession}:{onSession?:(csrf:string)=>void}) {
+  const [queueFilter,setQueueFilter]=useState('ALL');
   const [rows, setRows] = useState<any[]>([]);
   const [selected, setSelected] = useState<any>(null);
   const [draft, setDraft] = useState('');
@@ -72,7 +73,8 @@ export function AnnouncementReview({onSession}:{onSession?:(csrf:string)=>void})
       <textarea aria-label="İçe aktarılacak ilanlar JSON" rows={8} value={importText} onChange={e => setImportText(e.target.value)} style={{width:'100%'}} />
       <button disabled={busy || !csrf} onClick={() => run(async () => {await request('', {rows: JSON.parse(importText)}); await load();})}>İnceleme kuyruğuna aktar</button>
     </details>
-    {rows.map(row => <p key={row.id}><button disabled={busy} onClick={() => {setSelected(row); setDraft(JSON.stringify(row.parsed, null, 2)); setEvidence('');setPdfReviewed(false);setStoredPreview('');}}>{row.parsed.title} · {row.status}</button></p>)}
+    <label>İşleme görünümü <select value={queueFilter} onChange={e=>setQueueFilter(e.target.value)}>{[['ALL','Tümü'],['AUTO','Otomatik yayımlanan'],['MANUAL_REVIEW','Manuel inceleme'],['REJECTED','Reddedilen'],['PUBLISHED','Yayımlanan']].map(([v,t])=><option key={v} value={v}>{t}</option>)}</select></label>
+    {rows.filter(row=>queueFilter==='ALL'||queueFilter==='AUTO'&&(row.parsed?.sourceEvidence?.publicationMode==='AUTO_VALIDATED'||row.raw?.processing?.decision==='AUTO_PUBLISH_ELIGIBLE'&&['PUBLISHED','ARCHIVED','LINKED'].includes(row.status))||queueFilter===row.raw?.processing?.decision||queueFilter===row.status).map(row => <p key={row.id}><button disabled={busy} onClick={() => {setSelected(row); setDraft(JSON.stringify(row.parsed, null, 2)); setEvidence('');setPdfReviewed(false);setStoredPreview('');}}>{row.parsed.title} · {row.status}</button></p>)}
     {selected && <div>
       <h3>{selected.parsed.title}</h3>
       <p role="note">Eksik alanlar: {['applicationStartAt','applicationEndAt','quota'].filter(key=>selected.parsed[key]==null).join(', ')||'Yok'} · Uyarılar: {JSON.stringify(selected.issues)}</p>

@@ -101,4 +101,21 @@ class CareerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'NON_PUBLIC_DNS'):fetch_feed('https://kariyerkapisi.gov.tr/RSS','career',{})
             connect.assert_not_called()
 
+class GeneratorAndRateTests(unittest.TestCase):
+    def test_official_generator_parameters(self):
+        from career_rss import career_feed_url
+        from urllib.parse import urlsplit, parse_qs
+        self.assertEqual(career_feed_url(), 'https://kariyerkapisi.gov.tr/RSS')
+        self.assertEqual(parse_qs(urlsplit(career_feed_url([1, 2], 'Sözleşmeli Personel', 35, 'İzmir & işçi')).query), {'k':['1,2'],'t':['Sözleşmeli Personel'],'i':['35'],'s':['İzmir & işçi']})
+        for kwargs in [{'institutions':['../x']},{'city':0},{'city':True},{'search':'x\nHeader'}]:
+            with self.assertRaises(ValueError):career_feed_url(**kwargs)
+    def test_retry_after_bounded_safe_values(self):
+        from rss_transport import retry_after_seconds
+        from datetime import datetime, timezone
+        now=datetime(2026,10,29,tzinfo=timezone.utc)
+        self.assertEqual(retry_after_seconds('7200',now),7200)
+        self.assertEqual(retry_after_seconds('Thu, 29 Oct 2026 01:00:00 GMT',now),3600)
+        self.assertIsNone(retry_after_seconds('invalid',now))
+        self.assertLessEqual(retry_after_seconds('9'*100,now),366*86400)
+
 if __name__=='__main__':unittest.main()

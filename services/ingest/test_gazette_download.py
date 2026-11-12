@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import patch,MagicMock
 from gazette_download import ROOT,HOST,DOCUMENT_SCOPE,DownloadError,DeadlineSocket,request,validate_url,permission,cached_document,collect,public_addresses
 from official_rss import REGISTRY
+from official_gazette import index_manifest
 from fixtures.make_gazette_fixture import make
 
 DAY='2026-10-01'
@@ -128,6 +129,33 @@ class DownloadTests(unittest.TestCase):
         response=Response();response.begin=MagicMock(side_effect=socket.timeout())
         with self.assertRaises(DownloadError) as error:self.call(response)
         self.assertEqual((error.exception.code,error.exception.phase),('TIMEOUT','HTTP_HEADERS'))
+
+    def test_legacy_wrapper_and_bounded_cursor(self):
+        section=ROOT+'ilanlar/eskiilanlar/2026/10/20261001-4.htm'
+        legacy='http://www.resmigazete.gov.tr/main.aspx?main='+section.replace('https:','http:')
+        root_html='<h2>1 Ekim 2026 Tarihli ve 99999 Sayılı Resmî Gazete</h2><a href="'+legacy+'">Çeşitli İlanlar</a><a href="'+PDF+'">PDF</a>'
+        links=index_manifest(root_html,INDEX)['links']
+        self.assertTrue(any(l['url']==section and l['linkResolution']=='OBSERVED_MAIN_TARGET_HTTPS_CANDIDATE' for l in links))
+        self.assertFalse(index_manifest('<a href="http://www.resmigazete.gov.tr/main.aspx?main=https://evil.test/20261001.pdf">PDF</a>',INDEX)['links'])
+        urls=[ROOT+'ilanlar/eskiilanlar/2026/10/20261001-4-'+str(i)+'.pdf' for i in range(1,4)]
+        with tempfile.TemporaryDirectory() as d:
+            directory=Path(d);pdf=directory/'fixture.pdf';make(pdf);calls=[]
+            def fetch(url,maximum,previous=None,**kwargs):
+                calls.append(url)
+                body=b'User-agent: *\nAllow: /\n' if url.endswith('robots.txt') else root_html.encode() if url==INDEX else ''.join('<a href="'+u+'">PDF</a>' for u in urls).encode() if url==section else pdf.read_bytes()
+                return {'notModified':False,'body':body}
+            first=collect(DAY,directory/'cache',source=licensed(),fetch=fetch)
+            self.assertEqual([x['url'] for x in first['documents']],urls[:2]);self.assertNotIn(PDF,calls)
+            self.assertEqual(first['transport']['pendingDocumentDate'],DAY)
+            second=collect(DAY,directory/'cache',first['transport'],licensed(),fetch=fetch)
+            self.assertEqual([x['url'] for x in second['documents']],urls[2:]);self.assertIsNone(second['transport']['pendingDocumentDate'])
+
+    def test_failed_refresh_preserves_cached_bytes(self):
+        with tempfile.TemporaryDirectory() as d,patch('gazette_download.time.sleep'):
+            directory=Path(d);good=cached_document(PDF,directory,fetch=MagicMock(return_value={'notModified':False,'body':b'%PDF-original'}))
+            before=(directory/good['cacheName']).read_bytes()
+            with self.assertRaises(DownloadError):cached_document(PDF,directory,good,MagicMock(side_effect=DownloadError('TIMEOUT','HTTP_BODY')))
+            self.assertEqual((directory/good['cacheName']).read_bytes(),before)
 
     def test_document_404_is_review_hint_not_cancellation(self):
         with tempfile.TemporaryDirectory() as d:

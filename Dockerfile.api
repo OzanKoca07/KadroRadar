@@ -31,15 +31,17 @@ COPY --from=build --chown=node:node /app/node_modules /app/node_modules
 COPY --from=build --chown=node:node /app/apps/api /app/apps/api
 COPY --from=build --chown=node:node /app/packages /app/packages
 COPY --from=build --chown=node:node /app/apps/admin/dist /app/public/admin
+COPY --chown=node:node infra/source-worker-start.cjs /app/infra/source-worker-start.cjs
 COPY --chown=node:node web /app/public/legal
-COPY --chown=node:node services/ingest/gazette_download.py services/ingest/official_gazette.py services/ingest/official_rss.py services/ingest/source_rights.py services/ingest/feed_metadata.py services/ingest/career_rss.py services/ingest/rss_transport.py services/ingest/source_adapters.py services/ingest/source_probe.py services/ingest/import_historical.py services/ingest/historical_tables.py services/ingest/osym_web.py /app/services/ingest/
-RUN mkdir -p /app/.local/gazette /app/.local/historical /app/.local/sources && chown -R node:node /app/.local
+COPY --chown=node:node services/ingest/gazette_ephemeral.py services/ingest/gazette_download.py services/ingest/official_gazette.py services/ingest/official_rss.py services/ingest/source_rights.py services/ingest/feed_metadata.py services/ingest/career_rss.py services/ingest/career_worker.py services/ingest/career_detail.py services/ingest/application_dates.py services/ingest/rss_transport.py services/ingest/source_adapters.py services/ingest/source_probe.py services/ingest/import_historical.py services/ingest/historical_tables.py services/ingest/osym_web.py /app/services/ingest/
+RUN mkdir -p /app/.local/gazette /app/.local/historical /app/.local/sources /var/data && chown -R node:node /app/.local /var/data
 ENV NODE_ENV=production
 ENV PROCESS_ROLE=api
 ENV SOURCE_WORKER_ONCE=false ANNOUNCEMENT_SCAN_INTERVAL_HOURS=96 ANNOUNCEMENT_SCAN_MODE=scheduled
 ENV INGEST_PYTHON=/opt/ingest/bin/python
 ENV DOCUMENT_UPLOADS_ENABLED=false SOURCE_SYNC_ENABLED=false NOTIFICATIONS_ENABLED=false ALLOW_SELF_REGISTRATION=false
 ENV ACCOUNT_RECOVERY_ENABLED=false
+ENV SOURCE_REMOTE_INGEST_ENABLED=false SOURCE_AUTOMATION_APPROVED=false
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||process.env.API_PORT||3000)+'/api/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"

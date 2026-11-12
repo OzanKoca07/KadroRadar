@@ -107,7 +107,7 @@ class DeadlineSocket:
         return io.BufferedReader(Reader())
 
 
-def request(url, maximum, previous=None, timeout=18, robots=False):
+def request(url, maximum, previous=None, timeout=18, robots=False, sink=None):
     u = validate_url(url, robots)
     began, phase, timings, connection, response = time.monotonic(), 'DNS', {}, None, None
     def remaining():
@@ -152,22 +152,26 @@ def request(url, maximum, previous=None, timeout=18, robots=False):
         if length is not None and (not re.fullmatch(r'\d+', length) or int(length) > maximum):
             raise DownloadError('SIZE_LIMIT', phase)
         phase, at, body = 'HTTP_BODY', time.monotonic(), bytearray()
+        received=0;prefix=bytearray()
         while True:
             connection.settimeout(remaining())
-            chunk = response.read1(min(65536, maximum+1-len(body)))
+            chunk = response.read1(min(65536, maximum+1-received))
             if not chunk:
                 break
-            body.extend(chunk)
-            if len(body) > maximum:
+            received+=len(chunk)
+            if received > maximum:
                 raise DownloadError('SIZE_LIMIT', phase)
-        if length is not None and int(length) != len(body):
+            if len(prefix)<5:prefix.extend(chunk[:5-len(prefix)])
+            if sink is None:body.extend(chunk)
+            else:sink.write(chunk)
+        if length is not None and int(length) != received:
             raise DownloadError('INCOMPLETE_BODY', phase)
         completed('HTTP_BODY', at)
-        if not robots and (u.path.lower().endswith('.pdf') != body.startswith(b'%PDF-')):
+        if not robots and (u.path.lower().endswith('.pdf') != prefix.startswith(b'%PDF-')):
             raise DownloadError('DOCUMENT_SIGNATURE_MISMATCH', 'VALIDATION')
         if not robots and not u.path.lower().endswith('.pdf') and content_type not in ('text/html','application/xhtml+xml'):
             raise DownloadError('CONTENT_TYPE_REJECTED', 'VALIDATION')
-        return {'notModified':False, 'body':bytes(body), 'contentType':content_type, 'phasesMs':timings,
+        return {'notModified':False, **({'body':bytes(body)} if sink is None else {'bytes':received}), 'contentType':content_type, 'phasesMs':timings,
                 'etag':safe_header(response.getheader('ETag')), 'lastModified':safe_header(response.getheader('Last-Modified'))}
     except DownloadError:
         raise
@@ -180,6 +184,7 @@ def request(url, maximum, previous=None, timeout=18, robots=False):
 
 
 def cached_document(url, directory, previous=None, fetch=request, expected_sha256=None):
+    # Explicit legacy/offline cache helper. Automatic entrypoints use ephemeral collection.
     validate_url(url)
     record = previous or {}
     # One bounded retry for transient transport/502/503/504 only. No retry for
@@ -270,7 +275,8 @@ def collect(day, directory, previous=None, source=None, scheduled=False, fetch=r
     whole=[link for link in links if link['format']=='pdf' and link.get('observedDate')==day and urlsplit(link['url']).path.endswith('/'+day.replace('-','')+'.pdf') and urlsplit(link['url']).path.startswith('/eskiler/')]
     # Prefer the observed full issue over its individual notice copies. This
     # avoids creating two candidates for the same job through PDF+HTML mirrors.
-    if whole:
+    has_notice_index=any(link.get('section')=='MISCELLANEOUS' and link['format']=='html' for link in links)
+    if whole and not has_notice_index:
         if any(link['format']=='pdf' and link['url'] not in [item['url'] for item in whole] for link in links):issues.append('ADDITIONAL_PDF_LINKS_REVIEW')
         links=whole
     for link in list(links):
@@ -280,13 +286,17 @@ def collect(day, directory, previous=None, source=None, scheduled=False, fetch=r
             links.extend(inspect_index(link['url'])['links']);break
     targets=[]
     for link in links:
+        if has_notice_index and link in whole:continue
         if link.get('observedDate')!=day or link['format'] not in ('pdf','html'):continue
         try:validate_url(link['url'])
         except DownloadError:issues.append('UNAPPROVED_LINK_REVIEW');continue
         if link['url'] in [t['url'] for t in targets] or link['url'] in [i['url'] for i in indexes]:continue
         if link['format']=='pdf' or re.search('personel|memur|işçi|öğretim',link.get('label',''),re.I):targets.append(link)
     if len(targets)>2:issues.append('DOCUMENT_BUDGET_REVIEW')
-    for link in targets[:2]:
+    cursors=previous.get('documentCursors',{});cursor=cursors.get(day,0)
+    if not isinstance(cursor,int) or isinstance(cursor,bool) or cursor<0 or cursor>len(targets):raise DownloadError('CACHE_METADATA_INVALID','CACHE')
+    selected=targets[cursor:cursor+2];next_cursor=cursor+len(selected)
+    for link in selected:
         try:value=download(link['url'])
         except DownloadError as error:
             if error.http_status==404 and link['url'] in previous.get('snapshot',{}).get('documents',{}):
@@ -299,8 +309,8 @@ def collect(day, directory, previous=None, source=None, scheduled=False, fetch=r
     if not results:issues.append('NO_DOCUMENT_LINK_REVIEW')
     # An imperfect extraction is not evidence that an old job was cancelled.
     complete=bool(results) and not issues and all(not d['parsed'].get('documentIssues') and not d['parsed'].get('metrics',{}).get('flaggedPages') for d in results)
-    return {'sourceId':'gazette','date':day,'documents':results,'indexes':indexes,'issues':issues,'complete':complete,'coverageMode':'OBSERVED_WHOLE_ISSUE' if whole else 'BOUNDED_OBSERVED_NOTICES','missingDocuments':missing_documents,'networkProvenance':'LIVE_HTTPS' if fetch is request else 'MOCK_TRANSPORT',
-            'documentSha256':indexes[0]['sha256'],'robots':{k:v for k,v in robots.items() if k!='_rules'},'transport':{'documents':{**known,**receipts}},
+    return {'sourceId':'gazette','date':day,'documents':results,'indexes':indexes,'issues':issues,'complete':complete,'coverageMode':'OBSERVED_WHOLE_ISSUE' if whole and not has_notice_index else 'BOUNDED_OBSERVED_NOTICES','missingDocuments':missing_documents,'networkProvenance':'LIVE_HTTPS' if fetch is request else 'MOCK_TRANSPORT',
+            'documentSha256':indexes[0]['sha256'],'robots':{k:v for k,v in robots.items() if k!='_rules'},'transport':{'documents':{**known,**receipts},'documentCursors':{**dict(list(cursors.items())[-4:]),day:next_cursor if next_cursor<len(targets) else 0},'pendingDocumentDate':day if next_cursor<len(targets) else None},
             'downloaded':any(not d.get('notModified',False) for d in results),'autoPublished':False}
 
 
@@ -311,7 +321,8 @@ def main():
     parser.add_argument('--scheduled',action='store_true');args=parser.parse_args()
     try:
         previous=json.loads(args.state.read_text(encoding='utf-8')) if args.state and args.state.exists() else {}
-        report=collect(args.date,args.directory,previous,scheduled=args.scheduled)
+        from gazette_ephemeral import collect_ephemeral
+        report=collect_ephemeral(args.date,previous,scheduled=args.scheduled)
         args.output.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
         temporary=args.output.with_suffix('.tmp');temporary.write_text(json.dumps(report,ensure_ascii=False),encoding='utf-8');temporary.chmod(0o600);temporary.replace(args.output)
         print(json.dumps({'status':'OK','documents':len(report['documents']),'autoPublished':False}))

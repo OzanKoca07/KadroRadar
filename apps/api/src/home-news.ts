@@ -11,5 +11,11 @@ export function newsMetadata(item:any){
  const review=item.sourceEvidence?.homeNews;
  let provenance=JSON.stringify([item.sourceEvidence,item.sourceReferences]);for(let i=0;i<2;i++){try{provenance=decodeURIComponent(provenance);}catch{break;}}
  if(/ilan\.gov\.tr/i.test(provenance)||!newsSource(item.sourceUrl)||sourceRights(newsSourceRecord(item.sourceUrl))!=='LICENSE_VERIFIED'||review?.mode!=='MANUAL_REVIEWED'||review.indexPermissionReviewed!==true||review.factsHash!==newsFingerprint(item)||!Number.isFinite(Date.parse(review.reviewedAt)))return null;
- return {id:item.id,title:item.title,organization:item.organization,date:item.announcedAt??item.publishedAt,sourceUrl:item.sourceUrl,reviewMode:'MANUAL_REVIEWED',summary:typeof review.editorSummary==='string'&&review.editorSummary.trim().length>=10&&review.editorSummary.length<=180&&!/[<>\r\n]/.test(review.editorSummary)?review.editorSummary:[item.positionTitle,item.quota==null?null:`${item.quota} kontenjan`,item.city].filter(Boolean).join(' · ').slice(0,180)};
+ return {contentType:'PERSONNEL_RECRUITMENT',sourceName:newsSourceRecord(item.sourceUrl)?.organization??null,id:item.id,title:item.title,organization:item.organization,date:item.announcedAt??item.publishedAt,sourceUrl:item.sourceUrl,reviewMode:'MANUAL_REVIEWED',summary:typeof review.editorSummary==='string'&&review.editorSummary.trim().length>=10&&review.editorSummary.length<=180&&!/[<>\r\n]/.test(review.editorSummary)?review.editorSummary:[item.positionTitle,item.quota==null?null:`${item.quota} kontenjan`,item.city].filter(Boolean).join(' · ').slice(0,180)};
+}
+
+export function automaticNewsMetadata(item:any){
+ const source=newsSourceRecord(item.sourceUrl),now=Date.now();
+ if(!source||!['career','gazette'].includes(source.id)||sourceRights(source)!=='LICENSE_VERIFIED'||!newsSource(item.sourceUrl)||item.sourceEvidence?.sourceId!==source.id||item.sourceEvidence?.publicationMode!=='AUTO_VALIDATED'||!item.sourceCheckedAt||item.status!=='PUBLISHED'||!item.applicationStartAt||!item.applicationEndAt||+new Date(item.applicationStartAt)>now||+new Date(item.applicationEndAt)<now)return null;
+ return {id:item.id,title:item.title,organization:item.organization,sourceName:source.organization,contentType:'PERSONNEL_RECRUITMENT',applicationStatus:'OPEN',date:item.announcedAt??item.sourceEvidence.gazetteDate??item.publishedAt,sourceUrl:item.sourceUrl,summary:'',reviewMode:'AUTO_VALIDATED'};
 }

@@ -30,6 +30,7 @@ export class SourceRightsStore{
    const assessment={status:body.status,reason:body.reason.trim(),evidence,revision:randomUUID(),reviewedAt:new Date().toISOString()};
    const audit=await tx.reviewAudit.create({data:{batchId:id,actor,action:JSON.stringify({event:'SOURCE_POLICY_REVIEW',previousRevision:previous?.revision??null,assessment}),count:1}});
    await tx.sourceSyncState.upsert({where:{id},create:{id,status:'POLICY_'+assessment.status,metrics:{assessment,auditId:audit.id}},update:{status:'POLICY_'+assessment.status,metrics:{assessment,auditId:audit.id}}});
+   if(['career','gazette'].includes(source.id)&&sourceRights(source,assessment)!=='LICENSE_VERIFIED'){const prefix=source.id==='career'?'https://kariyerkapisi.gov.tr/':'https://www.resmigazete.gov.tr/';const refs=await tx.announcementSourceReference.findMany({where:{evidence:{path:['sourceUrl'],string_starts_with:prefix}},select:{announcementId:true}});const affected={OR:[{sourceUrl:{startsWith:prefix}},{id:{in:refs.map(r=>r.announcementId)}}]};await tx.announcement.updateMany({where:affected,data:{sourceCheckedAt:null}});await tx.announcementPosition.updateMany({where:{announcement:affected},data:{verifiedAt:null}});}
    return {assessment,effectiveStatus:sourceRights(source,assessment),automationActivated:false};
   });
  }

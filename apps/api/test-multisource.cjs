@@ -3,12 +3,13 @@ if(!process.env.DATABASE_URL?.includes('/kadroradar_ingestion_test_'))throw Erro
 process.env.NODE_ENV='production';process.env.PROCESS_ROLE='api';process.env.SOURCE_SYNC_ENABLED='false';process.env.NOTIFICATIONS_ENABLED='false';
 const {NestFactory}=require('@nestjs/core'),{PrismaClient}=require('@prisma/client'),{AppModule}=require('./dist/module'),{passwordHash}=require('./dist/password');
 (async()=>{const db=new PrismaClient(),suffix=randomBytes(6).toString('hex');process.env.GAZETTE_STORAGE_DIR=path.resolve(__dirname,'../../.local/multisource-tests',suffix);const app=await NestFactory.create(AppModule,{logger:false});app.setGlobalPrefix('api/v1');await app.listen(0,'127.0.0.1');const base=await app.getUrl()+'/api/v1';let token;
-async function req(route,body,status=200,method=body?'POST':'GET'){const r=await fetch(base+route,{method,headers:{'content-type':'application/json','x-client-platform':'mobile',...(token?{authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined});const value=await r.json();assert.equal(r.status,status,JSON.stringify(value));return value;}
+async function req(route,body,status=200,method=body?'POST':'GET',auth=token){const r=await fetch(base+route,{method,headers:{'content-type':'application/json','x-client-platform':'mobile',...(auth?{authorization:'Bearer '+auth}:{})},body:body?JSON.stringify(body):undefined});const value=await r.json();assert.equal(r.status,status,JSON.stringify(value));return value;}
 async function upload(source,url,html,status=201){const form=new FormData();form.append('sourceUrl',url);form.append('file',new Blob([html],{type:'text/html'}),'official.html');const r=await fetch(base+'/admin/gazette-documents/source-reviews/'+source,{method:'POST',headers:token?{authorization:'Bearer '+token}:{},body:form});const value=await r.json();assert.equal(r.status,status,JSON.stringify(value));return value;}
 try{
  await req('/admin/gazette-documents/source-reviews',undefined,401);
  await req('/admin/source-operations/energy/run',{},401);
  const password=randomBytes(24).toString('hex'),email='multi-'+suffix+'@example.test',user=await db.user.create({data:{email,passwordHash:await passwordHash(password),role:'CONTENT_EDITOR'}});token=(await req('/account/login',{email,password},201)).token;
+ const candidate=await db.user.create({data:{email:'candidate-'+email,passwordHash:user.passwordHash,role:'USER'}});await require('./test-account-fixtures.cjs').verifiedCandidate(db,candidate);const candidateToken=(await req('/account/login',{email:candidate.email,password,audience:'candidate'},201)).token;
  await req('/admin/source-operations/energy/run',{},403);
  const sourceUrl='https://kamuilan.sbb.gov.tr/fixture-'+suffix,html='<a href="/fixture-personnel">Personel alım ilanı SYNTHETIC</a><script>alert(1)</script>';
  const stagedBefore=await db.announcementImportRow.count();const document=await upload('sbb',sourceUrl,html);assert.equal(document.report.adapter,'SbbPublicAnnouncementsAdapter');assert.equal(document.report.links.length,1);assert.equal(document.report.links[0].organization,null);assert.equal(document.report.liveFetch,false);assert.equal(document.announcementRowsCreated,0);
@@ -22,7 +23,7 @@ try{
  const filter='&organization='+encodeURIComponent(common.organization);
  const free=await req('/announcements?kpssRequired=false&employmentType=WORKER'+filter);assert.equal(free.total,1);assert.equal(free.items[0].id,worker.id);assert.equal(free.items[0].applicationStatus,'OPEN');
  assert.ok(!JSON.stringify(free).includes(fullText));assert.ok(!JSON.stringify(await req('/announcements/'+worker.id)).includes(fullText));
- await req('/account/saved/'+worker.id,{},200,'PUT');assert.ok(!JSON.stringify(await req('/account/saved')).includes(fullText));assert.equal((await db.announcement.findUnique({where:{id:worker.id}})).requirements,fullText);
+ await req('/account/saved/'+worker.id,{},200,'PUT',candidateToken);assert.ok(!JSON.stringify(await req('/account/saved',undefined,200,'GET',candidateToken)).includes(fullText));assert.equal((await db.announcement.findUnique({where:{id:worker.id}})).requirements,fullText);
  assert.equal((await req('/announcements?view=upcoming'+filter)).items[0].id,upcoming.id);assert.equal((await req('/announcements?view=date-unverified'+filter)).items[0].id,unknown.id);
  await req('/announcements?kpssRequired=false&kpssScore=75',undefined,400);await req('/announcements?employmentType=UNKNOWN',undefined,400);
  const evidence={advertisementId:'SYNTHETIC-'+suffix,gazetteDate:'2026-10-26',pdfSha256:'a'.repeat(64),pageStart:1,pageEnd:2};
