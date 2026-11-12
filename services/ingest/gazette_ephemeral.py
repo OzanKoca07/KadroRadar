@@ -41,6 +41,8 @@ class TransientBody:
     def __exit__(self,*_):self.close()
 
 
+from source_pilot import budget, bound_report
+
 def usable_html(parsed):
     candidates=parsed.get('candidates',[])
     harmless={'HTML_SOURCE_REVIEW_REQUIRED','POSITION_COVERAGE_REQUIRES_REVIEW'}
@@ -50,15 +52,23 @@ def usable_html(parsed):
 
 
 def collect_ephemeral(day,previous=None,source=None,scheduled=False,fetch=request,ram_bytes=RAM_BYTES):
+    limits=budget(previous or {})
     source=source or REGISTRY['gazette'];permission(source,scheduled)
     index_url=archive_url(day);validate_url(index_url)
-    previous=previous or {};known=previous.get('documents',{})
+    previous=previous or {}
+    if limits:previous={**previous,'forceReparse':True}
+    known=previous.get('documents',{})
     if not isinstance(known,dict) or len(known)>512:raise DownloadError('CACHE_METADATA_INVALID','STATE')
     robots=robots_allowed(index_url,fetch);indexes=[];results=[];unchanged=[];receipts={};issues=[];missing=[]
     metrics={'downloadBytes':0,'pdfDownloads':0,'htmlDownloads':0,'notModified':0,'ramDocuments':0,'tempDocuments':0,'persistentDocumentBytes':0}
     # TemporaryDirectory owns every spill. A failed parser/request cannot leave a PDF.
     with tempfile.TemporaryDirectory(prefix='kadroradar-gazette-') as directory:
-        def get(url,html=False):
+        document_requests=0
+        def get(url,html=False,is_index=False):
+            nonlocal document_requests
+            if limits and not is_index:
+                if document_requests>=limits['maxDocuments']:raise DownloadError('PILOT_DOCUMENT_LIMIT','BUDGET')
+                document_requests+=1
             validate_url(url);robots_allowed(url,fetch,robots)
             old=known.get(url,{})
             valid=old.get('url')==url and re.fullmatch('[a-f0-9]{64}',old.get('sha256','')) and old.get('parserVersion')==PARSER_VERSION
@@ -86,7 +96,7 @@ def collect_ephemeral(day,previous=None,source=None,scheduled=False,fetch=reques
                 record={'url':url,'sha256':digest,'etag':value.get('etag'),'lastModified':value.get('lastModified'),'parserVersion':PARSER_VERSION,'parseStatus':'PARSED'}
                 receipts[url]=record;return record,parsed
         def index(url):
-            rec,body=get(url,True);manifest=rec['manifest']
+            rec,body=get(url,True,True);manifest=rec['manifest']
             if manifest.get('gazetteDate') not in (None,day):raise DownloadError('INDEX_DATE_MISMATCH','PARSE')
             indexes.append({'url':url,'sha256':rec['sha256'],'manifest':manifest});return manifest,body
         root,root_body=index(index_url);links=list(root['links']);active_url=index_url;active_body=root_body
@@ -120,7 +130,7 @@ def collect_ephemeral(day,previous=None,source=None,scheduled=False,fetch=reques
             else:raise DownloadError('INDEX_CONTENT_REVIEW','PARSE')
         cursors=previous.get('documentCursors',{});cursor=cursors.get(day,0)
         if not isinstance(cursor,int) or isinstance(cursor,bool) or cursor<0 or cursor>len(plans):raise DownloadError('CACHE_METADATA_INVALID','STATE')
-        selected=plans[cursor:cursor+2];next_cursor=cursor+len(selected)
+        selected=plans[cursor:cursor+(limits['maxDocuments'] if limits else 2)];next_cursor=cursor+len(selected)
         for link,mirror in selected:
             url=link['url'];fmt=link['format'];discovery=None
             try:
@@ -157,9 +167,9 @@ def collect_ephemeral(day,previous=None,source=None,scheduled=False,fetch=reques
     cutoff=(date.fromisoformat(day)-timedelta(days=6)).strftime('%Y%m%d')
     transport['documents']={u:r for u,r in transport['documents'].items() if (re.search(r'/(20\d{6})(?:[-_]\d+)*\.',u) and re.search(r'/(20\d{6})(?:[-_]\d+)*\.',u)[1]>=cutoff)}
     if len(transport['documents'])>512:raise DownloadError('STATE_BUDGET_REVIEW','STATE')
-    return {'sourceId':'gazette','date':day,'indexes':indexes,'documents':results,'unchangedDocuments':unchanged,'issues':issues,'complete':False,
+    return bound_report({'sourceId':'gazette','date':day,'indexes':indexes,'documents':results,'unchangedDocuments':unchanged,'issues':issues,'complete':False,
             'coverageMode':'HTML_FIRST_BOUNDED_NOTICES','missingDocuments':missing,'networkProvenance':'LIVE_HTTPS' if fetch is request else 'MOCK_TRANSPORT',
-            'documentSha256':indexes[0]['sha256'],'transport':transport,'metrics':metrics,'downloaded':bool(metrics['downloadBytes']), 'autoPublished':False}
+            'documentSha256':indexes[0]['sha256'],'transport':transport,'metrics':metrics,'downloaded':bool(metrics['downloadBytes']), 'autoPublished':False},limits)
 
 
 def main():

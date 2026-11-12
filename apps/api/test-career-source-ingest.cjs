@@ -1,4 +1,4 @@
-require('reflect-metadata');require('./test-account-fixtures.cjs').guard();
+require('reflect-metadata');process.env.SOURCE_INGEST_MODE='automatic';require('./test-account-fixtures.cjs').guard();
 const assert=require('node:assert/strict'),{randomUUID,randomBytes,createHash}=require('node:crypto'),{PrismaClient}=require('@prisma/client'),{NestFactory}=require('@nestjs/core'),{AppModule}=require('./dist/module'),auth=require('../../packages/shared/source-ingest.cjs'),{licensed}=require('./test-source-fixtures.cjs'),registry=require('../../packages/official-sources.json');
 const hash=s=>createHash('sha256').update(s).digest('hex');
 (async()=>{const db=new PrismaClient(),saved=structuredClone(registry.career),keys=['SOURCE_AUTOMATION_APPROVED','SOURCE_REMOTE_INGEST_ENABLED','SOURCE_INGEST_HMAC_KEY','SOURCE_INGEST_ORIGIN','CAREER_DETAIL_ENRICHMENT_ENABLED'],env=Object.fromEntries(keys.map(k=>[k,process.env[k]]));let app,states=[],checks=0,phase='START';const ids=['career','policy:career','external:career','request:career','alert:career'];try{

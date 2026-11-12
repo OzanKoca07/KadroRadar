@@ -2,6 +2,23 @@
 name: Manual source automation pilot
 on:
   workflow_dispatch:
+    inputs:
+      source:
+        description: Single approved source for staging only
+        type: choice
+        options: [career, gazette]
+        required: true
+        default: career
+      max_records:
+        description: Maximum staging rows (1-25)
+        type: number
+        required: true
+        default: 5
+      max_documents:
+        description: Maximum source documents (1-2; index pages excluded)
+        type: number
+        required: true
+        default: 1
 permissions:
   contents: read
 concurrency:
@@ -17,11 +34,16 @@ jobs:
       - name: Fail-closed approval gate
         id: approval
         env:
+          SOURCE_ID: ${{ inputs.source }}
+          SOURCE_PILOT_MAX_RECORDS: ${{ inputs.max_records }}
+          SOURCE_PILOT_MAX_DOCUMENTS: ${{ inputs.max_documents }}
+          SOURCE_INGEST_MODE: staging-only
+          R2_SOURCE_RECEIPTS_ENABLED: 'false'
           SOURCE_AUTOMATION_APPROVED: ${{ vars.SOURCE_AUTOMATION_APPROVED }}
           SOURCE_RELEASE_SHA: ${{ vars.SOURCE_RELEASE_SHA }}
           SOURCE_INGEST_HMAC_KEY: ${{ secrets.SOURCE_INGEST_HMAC_KEY }}
         run: >-
-          node -e "const fs=require('fs');const a=process.env.SOURCE_AUTOMATION_APPROVED==='true';if(a&&(!/^[a-f0-9]{40}$/.test(process.env.SOURCE_RELEASE_SHA||'')||!/^[a-f0-9]{64}$/i.test(process.env.SOURCE_INGEST_HMAC_KEY||'')))throw Error('SOURCE_CONFIGURATION_INCOMPLETE');fs.appendFileSync(process.env.GITHUB_OUTPUT,'approved='+a+'\n');console.log(a?'APPROVED_CONFIGURATION':'AUTOMATION_DISABLED_NO_IO')"
+          node -e "const fs=require('fs');const a=process.env.SOURCE_AUTOMATION_APPROVED==='true';if(a&&(!['career','gazette'].includes(process.env.SOURCE_ID)||!/^([1-9]|1[0-9]|2[0-5])$/.test(process.env.SOURCE_PILOT_MAX_RECORDS||'')||! /^[12]$/.test(process.env.SOURCE_PILOT_MAX_DOCUMENTS||'')||!/^[a-f0-9]{40}$/.test(process.env.SOURCE_RELEASE_SHA||'')||!/^[a-f0-9]{64}$/i.test(process.env.SOURCE_INGEST_HMAC_KEY||'')))throw Error('SOURCE_CONFIGURATION_INCOMPLETE');fs.appendFileSync(process.env.GITHUB_OUTPUT,'approved='+a+'\n');console.log(a?'APPROVED_CONFIGURATION':'AUTOMATION_DISABLED_NO_IO')"
       - if: steps.approval.outputs.approved == 'true'
         uses: actions/checkout@v4
         with:
@@ -39,18 +61,18 @@ jobs:
         env:
           SOURCE_RELEASE_SHA: ${{ vars.SOURCE_RELEASE_SHA }}
         run: node -e "const c=require('child_process');if(!/^[a-f0-9]{40}$/.test(process.env.SOURCE_RELEASE_SHA||'')||c.execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()!==process.env.SOURCE_RELEASE_SHA)process.exit(1)"
-      - name: Run both approved source adapters
+      - name: Run selected source into staging only
         if: steps.approval.outputs.approved == 'true'
         env:
+          SOURCE_ID: ${{ inputs.source }}
+          SOURCE_PILOT_MAX_RECORDS: ${{ inputs.max_records }}
+          SOURCE_PILOT_MAX_DOCUMENTS: ${{ inputs.max_documents }}
+          SOURCE_INGEST_MODE: staging-only
+          R2_SOURCE_RECEIPTS_ENABLED: 'false'
           SOURCE_AUTOMATION_APPROVED: ${{ vars.SOURCE_AUTOMATION_APPROVED }}
           SOURCE_RELEASE_SHA: ${{ vars.SOURCE_RELEASE_SHA }}
           SOURCE_INGEST_API_URL: ${{ vars.SOURCE_INGEST_API_URL }}
           SOURCE_INGEST_HMAC_KEY: ${{ secrets.SOURCE_INGEST_HMAC_KEY }}
           INGEST_PYTHON: python
           INGEST_INSTALL_DEPENDENCIES: 'true'
-          R2_SOURCE_RECEIPTS_ENABLED: ${{ vars.R2_SOURCE_RECEIPTS_ENABLED }}
-          R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
-          R2_BUCKET: ${{ vars.R2_BUCKET }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-        run: node infra/source-ingest-runner.cjs --all
+        run: node infra/source-ingest-runner.cjs

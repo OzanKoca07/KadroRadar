@@ -7,6 +7,10 @@ import {nextScanAt,sourceScanIntervalHours} from './announcement-scan';
 import {indexingAssessment} from './source-indexing-policy';
 import {gazetteUrl} from './gazette-staging';
 import {policyFingerprint} from './career-publication';
+import {pilotTransaction,stagePilot} from './source-pilot';
+const pilot=require(require('node:path').resolve(__dirname,'../../../packages/shared/source-pilot.cjs'));
+function execution(){try{return pilot.settings(process.env);}catch{throw new ServiceUnavailableException('Source execution mode unavailable');}}
+function pilotRequest(body:any,id:string,config:any){if(config.mode!=='staging-only')return;if(body?.mode!==config.mode||config.sourceId!==id||body.releaseSha!==process.env.RENDER_GIT_COMMIT||!body.limits||!Number.isInteger(body.limits.maxRecords)||body.limits.maxRecords<1||body.limits.maxRecords>config.limits.maxRecords||!Number.isInteger(body.limits.maxDocuments)||body.limits.maxDocuments<1||body.limits.maxDocuments>config.limits.maxDocuments)throw new BadRequestException('Invalid signed pilot request');}
 const registry=require(resolve(__dirname,'../../../packages/official-sources.json'));
 const auth=require(resolve(__dirname,'../../../packages/shared/source-ingest.cjs'));
 const uuid=(s:any)=>typeof s==='string'&&/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(s);
@@ -23,14 +27,17 @@ export function gazetteDates(transport:any,today:string,days:number):string[]{
 export class SourceIngest {
  constructor(private db:IngestionDb,private operations:SourceOperations){}
  private enabled(){if(process.env.SOURCE_AUTOMATION_APPROVED!=='true'||process.env.SOURCE_REMOTE_INGEST_ENABLED!=='true')throw new ServiceUnavailableException('Source automation disabled');}
- private async allowed(id:string){if(!['career','gazette'].includes(id))throw new ForbiddenException('Unsupported source');const source=registry[id],policy=await new SourceRightsStore(this.db).current(id);if(!sourceAllowed(source)||sourceRights(source,policy)!=='LICENSE_VERIFIED'||id==='gazette'&&policy&&!policy.evidence?.scopes?.includes('AUTOMATED_GAZETTE_DOCUMENT_ACCESS'))throw new ForbiddenException('Source permission unverified');return {source,policy};}
+ private async allowed(id:string,db:any=this.db){if(!['career','gazette'].includes(id))throw new ForbiddenException('Unsupported source');const source=registry[id],policy=await new SourceRightsStore(db).current(id);if(!sourceAllowed(source)||sourceRights(source,policy)!=='LICENSE_VERIFIED'||id==='gazette'&&policy&&!policy.evidence?.scopes?.includes('AUTOMATED_GAZETTE_DOCUMENT_ACCESS'))throw new ForbiddenException('Source permission unverified');return {source,policy};}
  async claim(body:any,id='gazette'){
-  this.enabled();
+  this.enabled();const config=execution();pilotRequest(body,id,config);
   if(!uuid(body?.runId))throw new BadRequestException('Run identity required');
   const {source,policy}=await this.allowed(id);
-  return this.db.$transaction(async tx=>{
+  return this.db.$transaction(async original=>{
+   const tx=config.mode==='staging-only'?pilotTransaction(original):original;
    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'source-sync:'+id}))`;
    const lease=await tx.sourceSyncState.findUnique({where:{id:`external:${id}`}}),m=lease?.metrics as any;
+   if(lease?.status==='LEASED'&&m.mode!==config.mode)throw new ConflictException('Lease mode changed');
+   if(lease?.status==='LEASED'&&m.runId===body.runId&&config.mode==='staging-only'&&(m.releaseSha!==body.releaseSha||auth.canonical(m.limits)!==auth.canonical(body.limits)))throw new ConflictException('Pilot lease changed');
    if(lease?.status==='LEASED'&&Date.parse(m?.expiresAt)>Date.now())return m.runId===body.runId?{status:'LEASED',...m}: {status:'BUSY'};
    // Same UUID can never create a second logical run, even after a lost response.
    if(m?.runId===body.runId)return {status:lease?.status==='COMPLETED'?'ALREADY_COMPLETED':'EXPIRED'};
@@ -49,9 +56,9 @@ export class SourceIngest {
    const fingerprint=policyFingerprint(source,policy);
    const transport={...(previous.transport||{}),policyFingerprint:fingerprint,forceReparse:previous.transport?.policyFingerprint!==fingerprint};
    const sha=process.env.RENDER_GIT_COMMIT;
-   const detailEnabled=id==='career'&&process.env.CAREER_DETAIL_ENRICHMENT_ENABLED==='true'&&source.rightsAssessment?.evidence?.scopes?.includes('AUTOMATED_CAREER_DETAIL_ACCESS')&&(!policy||policy.evidence?.scopes?.includes('AUTOMATED_CAREER_DETAIL_ACCESS'));
-   const detailRows=detailEnabled?(await tx.announcementImportRow.findMany({where:{id:{in:(transport.knownGuids||[]).slice(0,1000).map((h:string)=>'career-rss-'+h)}},select:{raw:true},take:1000})).map(r=>{const {processing,metadataPublication,...raw}=r.raw as any;return raw;}):[];
-   const metrics={sourceId:id,detailEnabled,detailRows,runId:body.runId,...(sha&&/^[a-f0-9]{40}$/.test(sha)?{releaseSha:sha}:{}),expiresAt:new Date(+now+15*60000).toISOString(),date:pendingDates[0]??today,pendingDates,requestId:request?.status==='REQUESTED'?(request.metrics as any)?.requestId??null:null,transport,source:{...source,rightsAssessment:policy??source.rightsAssessment}};
+   const detailEnabled=config.mode!=='staging-only'&&id==='career'&&process.env.CAREER_DETAIL_ENRICHMENT_ENABLED==='true'&&source.rightsAssessment?.evidence?.scopes?.includes('AUTOMATED_CAREER_DETAIL_ACCESS')&&(!policy||policy.evidence?.scopes?.includes('AUTOMATED_CAREER_DETAIL_ACCESS'));
+   const detailRows=detailEnabled?(await tx.announcementImportRow.findMany({where:{id:{in:(transport.knownGuids||[]).slice(0,1000).map((h:string)=>'career-rss-'+h)}},select:{raw:true},take:1000})).map((r:any)=>{const {processing,metadataPublication,...raw}=r.raw as any;return raw;}):[];
+   const metrics={mode:config.mode,...(config.mode==='staging-only'?{limits:body.limits}:{}),sourceId:id,detailEnabled,detailRows,runId:body.runId,...(sha&&/^[a-f0-9]{40}$/.test(sha)?{releaseSha:sha}:{}),expiresAt:new Date(+now+15*60000).toISOString(),date:pendingDates[0]??today,pendingDates,requestId:request?.status==='REQUESTED'?(request.metrics as any)?.requestId??null:null,transport,source:{...source,rightsAssessment:policy??source.rightsAssessment}};
    await tx.sourceSyncState.upsert({where:{id:`external:${id}`},create:{id:`external:${id}`,status:'LEASED',metrics},update:{status:'LEASED',metrics}});
    await tx.sourceSyncState.upsert({where:{id},create:{id,status:'RUNNING_EXTERNAL',lastAttemptAt:now,nextAttemptAt:new Date(+now+minimum)},update:{status:'RUNNING_EXTERNAL',lastAttemptAt:now,nextAttemptAt:new Date(+now+minimum)}});
    await tx.reviewAudit.create({data:{batchId:`external:${id}`,actor:'source-ingest',action:JSON.stringify({event:'EXTERNAL_SOURCE_LEASE',runId:body.runId}),count:0}});
@@ -59,16 +66,19 @@ export class SourceIngest {
   });
  }
  async complete(body:any,id='gazette'){
-  this.enabled();
+  this.enabled();const config=execution();pilotRequest(body,id,config);
   if(!uuid(body?.runId)||(!body.report&&!errorCodes.includes(body.errorCode))||body.report&&body.errorCode)throw new BadRequestException('Bounded source result required');
   const reportHash=auth.digest(body);
-  return this.db.$transaction(async tx=>{
+  return this.db.$transaction(async original=>{
+   const tx=config.mode==='staging-only'?pilotTransaction(original):original;
    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'external-result:'+id}))`;
    const row=await tx.sourceSyncState.findUnique({where:{id:`external:${id}`}}),lease=row?.metrics as any;
+   if(lease?.mode!==config.mode||config.mode==='staging-only'&&(lease.releaseSha!==body.releaseSha||auth.canonical(lease.limits)!==auth.canonical(body.limits)))throw new ConflictException('Pilot lease configuration changed');
    if(lease?.runId!==body.runId)throw new ConflictException('Unknown lease');
    if(row?.status==='COMPLETED'){if(lease.reportHash!==reportHash)throw new ConflictException('Result changed');return lease.result;}
    if(row?.status!=='LEASED'||Date.parse(lease.expiresAt)<=Date.now())throw new ConflictException('Lease expired');
-   await this.allowed(id);
+   await tx.$executeRaw`SELECT pg_advisory_xact_lock_shared(hashtext(${'source-policy:'+id}))`;
+   await this.allowed(id,tx);
    const report=body.report;
    if(report&&id==='gazette'){
     if(report.sourceId!=='gazette'||report.date!==lease.date||report.networkProvenance!=='LIVE_HTTPS'||!Array.isArray(report.documents)||report.documents.length>2||!Array.isArray(report.indexes)||report.indexes.length>2||!Array.isArray(report.unchangedDocuments)||report.unchangedDocuments.length>2||!report.transport||auth.canonical(report).length>7*1024*1024)throw new BadRequestException('Invalid Gazette result');
@@ -105,7 +115,8 @@ export class SourceIngest {
     else {if(report.liveFetch!==true)throw new BadRequestException('Live RSS evidence required');const current=report.rows.map((r:any)=>r.guidHash);report.missingGuids=known.filter((h:string)=>!current.includes(h));}
     report.transport={...report.transport,knownGuids:report.notModified?known:report.rows.map((r:any)=>r.guidHash),documentSha256:report.documentSha256,policyFingerprint:lease.transport.policyFingerprint,forceReparse:false};report.downloaded=report.notModified!==true;
    }
-   const result=await this.operations.run(id,async()=>{if(body.errorCode)throw Error(body.errorCode);return report;},{mode:'scheduled',externalRunId:body.runId,transaction:tx});
+   const result=config.mode==='staging-only'?(body.errorCode?{status:'ERROR',mode:'staging-only',errorCode:body.errorCode,created:0,autoPublished:0,newsPublished:0}:await stagePilot(tx,id,report,lease.limits,body.runId)):await this.operations.run(id,async()=>{if(body.errorCode)throw Error(body.errorCode);return report;},{mode:'scheduled',externalRunId:body.runId,transaction:tx});
+   if(config.mode==='staging-only')await tx.sourceSyncState.update({where:{id},data:{status:result.status==='OK'?'PILOT_STAGED':'PILOT_FAILED'}});
    // Do not consume a lease on BUSY/NOT_DUE; no publication success is claimed.
    if(!['OK','ERROR'].includes(result.status))return result;
    const receipt={sourceId:id,runId:body.runId,reportHash,...result};
@@ -123,6 +134,7 @@ export class SourceIngestController {
  private authorize(req:any,body:any,action:string,id:string){
   if(!['career','gazette'].includes(id))throw new ForbiddenException('Unsupported source');
   if(process.env.SOURCE_REMOTE_INGEST_ENABLED!=='true'||process.env.SOURCE_AUTOMATION_APPROVED!=='true')throw new ServiceUnavailableException('Source ingest disabled');
+  execution();
   if(process.env.NODE_ENV==='production'&&(!req.secure||req.get('host')!==new URL(process.env.SOURCE_INGEST_ORIGIN||'').host))throw new UnauthorizedException('Source ingest denied');
   if(!auth.verify(process.env.SOURCE_INGEST_HMAC_KEY,process.env.SOURCE_INGEST_ORIGIN,'/api/v1/source-ingest/'+id+'/'+action,body,req.headers))throw new UnauthorizedException('Source ingest denied');
  }
