@@ -113,6 +113,7 @@ jobs:
       - run: node apps/api/test-account-recovery.cjs
       - run: node apps/api/test-account-mail.cjs
       - run: node infra/test-legacy-osym-contract.cjs
+      - run: node infra/test-postgres-readiness.cjs
       - run: node infra/test-migration16-restore.cjs
       - run: node infra/test-migration16-connection.cjs
       - run: node infra/test-migration16-backup.cjs

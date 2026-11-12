@@ -60,6 +60,12 @@ Admin'in mevcut RBAC, alan doğrulama, kaynak izni ve ayrı APPROVE/PUBLISH akı
 
 Önceki cc8c3dbd commit'i gerçek GitHub CI 6/6 ve GitGuardian PASS. Yeni staging commit'i için sonuçlar, push sonrasında PR #3 kontrollerinden ayrıca doğrulanmalıdır; eski başarı yeni commit'in yerine geçmez. Son operasyon raporu yeni SHA ve gerçek CI bağlantısını içerir. Bu belgeye dayanarak PR merge veya production aktivasyonu yapılmaz.
 
+## Yeni PR CI restore gözlemi
+
+Staging commit `1aac9eb58a31737b35a0ce0c51152d248d67b5ca` üzerinde push CI 6/6 ve GitGuardian PASS, fakat PR CI 43276221691 mevcut izole migration16 restore testinin RESTORE aşamasında exit1 verdi. Eski test alt aşama/stderr sınıflandırması vermediğinden ilk GitHub hatasının kesin alt nedeni bilinmiyor; yerel aynı test 23 kontrolle PASS oldu.
+
+Ayrı gerçek disposable PG16 deneyi, initialization sırasında Unix socket pg_isready'nin PASS olmasına karşın TCP sunucusunun hazır olmadığını kanıtladı. Testin eski readiness kontrolü bu geçici sunucuyu hazır kabul edebiliyordu. Test artık final TCP sunucusunu bekler; mevcut 40 denemelik sınır sonunda fail-closed durur. Restore start/copy/list/import/snapshot aşamaları ayrı loglanır. Bu yalnız CI sentetik test düzeltmesidir; production backup/deploy operatörleri ve 23 korunan dosya değişmedi. Yeni CI bu düzeltmeyle tekrar doğrulanmalıdır; ilk exit1'in bu yarıştan kaynaklandığı kesin kanıtlanmış gibi raporlanmaz.
+
 ## Android ve production GET durumu
 
 Production GET health eski SHA e31776b5..., database ready; historical total 8611; sayfalar arası ID benzersiz; ilan/news 0; selfRegistration=false; oturumsuz profil/admin 401. Production'a POST veya doğrudan DB bağlantısı yapılmadı.

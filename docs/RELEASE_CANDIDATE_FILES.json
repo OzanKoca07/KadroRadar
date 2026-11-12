@@ -84,7 +84,9 @@
     "apps/api/test-source-pilot.cjs",
     "services/ingest/source_pilot.py",
     "services/ingest/test_source_pilot.py",
-    "infra/test-source-pilot.cjs"
+    "infra/test-source-pilot.cjs",
+    "infra/test-postgres-readiness.cjs",
+    "infra/test-migration16-restore.cjs"
   ],
   "documentationAndInactiveTemplates": [
     "docs/AUTOMATION_RELEASE_FILES.json",
